@@ -657,4 +657,165 @@ class VaultManager: ObservableObject {
         let children = scanDiskForFolders(at: url)
         return NoteFolder(name: name, savedName: name, notes: notes, children: children)
     }
+    
+    // MARK: - Move Operations (Drag & Drop)
+    
+    /// Di chuyển file note từ folder này sang folder khác trên disk
+    /// - Parameters:
+    ///   - noteTitle: Tên note (không có .md)
+    ///   - fromFolderNames: Đường dẫn folder nguồn (mảng tên folder từ root)
+    ///   - toFolderNames: Đường dẫn folder đích (mảng tên folder từ root)
+    /// - Returns: true nếu thành công
+    @discardableResult
+    func moveNoteFile(noteTitle: String, fromFolderNames: [String], toFolderNames: [String]) -> Bool {
+        guard let vaultURL = vaultURL else {
+            print("❌ No vault selected")
+            return false
+        }
+        
+        let fileManager = FileManager.default
+        let fileName = sanitizeFileName(noteTitle) + ".md"
+        
+        // Build source path
+        var sourceURL = vaultURL
+        for folderName in fromFolderNames {
+            sourceURL = sourceURL.appendingPathComponent(sanitizeFileName(folderName))
+        }
+        sourceURL = sourceURL.appendingPathComponent(fileName)
+        
+        // Build destination path
+        var destURL = vaultURL
+        for folderName in toFolderNames {
+            destURL = destURL.appendingPathComponent(sanitizeFileName(folderName))
+        }
+        
+        // Ensure destination folder exists
+        if !fileManager.fileExists(atPath: destURL.path) {
+            do {
+                try fileManager.createDirectory(at: destURL, withIntermediateDirectories: true)
+            } catch {
+                print("❌ Failed to create destination folder: \(error)")
+                return false
+            }
+        }
+        
+        destURL = destURL.appendingPathComponent(fileName)
+        
+        // Move the file
+        do {
+            // If destination file exists, remove it first
+            if fileManager.fileExists(atPath: destURL.path) {
+                try fileManager.removeItem(at: destURL)
+            }
+            try fileManager.moveItem(at: sourceURL, to: destURL)
+            print("📦 Moved note: \(fileName) → \(toFolderNames.joined(separator: "/"))")
+            return true
+        } catch {
+            print("❌ Failed to move note \(fileName): \(error)")
+            return false
+        }
+    }
+    
+    /// Di chuyển toàn bộ folder sang vị trí mới trên disk
+    /// - Parameters:
+    ///   - folderName: Tên folder cần di chuyển
+    ///   - fromParentNames: Đường dẫn folder cha nguồn (mảng tên folder từ root, rỗng = root)
+    ///   - toParentNames: Đường dẫn folder cha đích (mảng tên folder từ root, rỗng = root)
+    /// - Returns: true nếu thành công
+    @discardableResult
+    func moveFolderOnDisk(folderName: String, fromParentNames: [String], toParentNames: [String]) -> Bool {
+        guard let vaultURL = vaultURL else {
+            print("❌ No vault selected")
+            return false
+        }
+        
+        let fileManager = FileManager.default
+        let sanitizedFolderName = sanitizeFileName(folderName)
+        
+        // Build source path
+        var sourceURL = vaultURL
+        for name in fromParentNames {
+            sourceURL = sourceURL.appendingPathComponent(sanitizeFileName(name))
+        }
+        sourceURL = sourceURL.appendingPathComponent(sanitizedFolderName)
+        
+        // Build destination parent path
+        var destParentURL = vaultURL
+        for name in toParentNames {
+            destParentURL = destParentURL.appendingPathComponent(sanitizeFileName(name))
+        }
+        
+        // Ensure destination parent folder exists
+        if !fileManager.fileExists(atPath: destParentURL.path) {
+            do {
+                try fileManager.createDirectory(at: destParentURL, withIntermediateDirectories: true)
+            } catch {
+                print("❌ Failed to create destination parent folder: \(error)")
+                return false
+            }
+        }
+        
+        let destURL = destParentURL.appendingPathComponent(sanitizedFolderName)
+        
+        // Check if source exists
+        guard fileManager.fileExists(atPath: sourceURL.path) else {
+            print("⚠️ Source folder doesn't exist: \(sourceURL.path)")
+            return false
+        }
+        
+        // Move the folder
+        do {
+            // If destination folder exists, we need to handle conflict
+            if fileManager.fileExists(atPath: destURL.path) {
+                // Generate unique name
+                var uniqueName = sanitizedFolderName
+                var counter = 1
+                var uniqueDestURL = destURL
+                while fileManager.fileExists(atPath: uniqueDestURL.path) {
+                    uniqueName = "\(sanitizedFolderName) \(counter)"
+                    uniqueDestURL = destParentURL.appendingPathComponent(uniqueName)
+                    counter += 1
+                }
+                try fileManager.moveItem(at: sourceURL, to: uniqueDestURL)
+                print("📦 Moved folder: \(folderName) → \(toParentNames.joined(separator: "/"))/\(uniqueName)")
+            } else {
+                try fileManager.moveItem(at: sourceURL, to: destURL)
+                print("📦 Moved folder: \(folderName) → \(toParentNames.joined(separator: "/"))")
+            }
+            return true
+        } catch {
+            print("❌ Failed to move folder \(folderName): \(error)")
+            return false
+        }
+    }
+    
+    /// Lấy đường dẫn folder names từ root đến folder có ID cho trước
+    func getFolderPath(folderID: UUID, in folders: [NoteFolder], currentPath: [String] = []) -> [String]? {
+        for folder in folders {
+            let newPath = currentPath + [folder.name]
+            if folder.id == folderID {
+                return newPath
+            }
+            if let found = getFolderPath(folderID: folderID, in: folder.children, currentPath: newPath) {
+                return found
+            }
+        }
+        return nil
+    }
+    
+    /// Lấy đường dẫn folder cha (parent path) của folder có ID cho trước
+    func getParentFolderPath(folderID: UUID, in folders: [NoteFolder], currentPath: [String] = []) -> [String]? {
+        for folder in folders {
+            // Check if this folder contains the target as direct child
+            if folder.children.contains(where: { $0.id == folderID }) {
+                return currentPath + [folder.name]
+            }
+            // Recurse into children
+            let newPath = currentPath + [folder.name]
+            if let found = getParentFolderPath(folderID: folderID, in: folder.children, currentPath: newPath) {
+                return found
+            }
+        }
+        return nil
+    }
 }

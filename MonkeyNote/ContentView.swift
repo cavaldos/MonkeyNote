@@ -30,6 +30,9 @@ struct ContentView: View {
     
     // Debounce save
     @State private var saveTask: Task<Void, Never>?
+    
+    // Drag & Drop state
+    @State private var dragOverFolderID: NoteFolder.ID?
 
     @AppStorage("note.fontFamily") private var fontFamily: String = "monospaced"
     @AppStorage("note.fontSize") private var fontSize: Double = 28
@@ -262,33 +265,28 @@ struct ContentView: View {
                     // Folders section
                     Section("Folders") {
                         OutlineGroup(folders, children: \.outlineChildren) { folder in
-                            HStack {
-                                Label(folder.name, systemImage: "folder")
-                                Spacer()
-                                Text("\(folder.notes.count)")
-                                    .foregroundStyle(.secondary)
-                            }
-                            .tag(folder.id)
-                            .contextMenu {
-                                Button {
-                                    addSubfolder(parentFolderID: folder.id)
-                                } label: {
-                                    Text("New Folder")
-                                }
-
-                                Button {
-                                    startRenameFolder(folderID: folder.id)
-                                } label: {
-                                    Text("Rename Folder")
-                                }
-
-                                Button(role: .destructive) {
-                                    deleteFolder(folderID: folder.id)
-                                } label: {
-                                    Text("Delete Folder")
-                                }
-                            }
+                            folderRow(folder: folder)
                         }
+                    }
+                    
+                    // Drop zone for moving folder to root
+                    Section {
+                        HStack {
+                            Image(systemName: "arrow.turn.up.left")
+                                .foregroundStyle(.secondary)
+                            Text("Move to Root")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .padding(.vertical, 4)
+                        .opacity(dragOverFolderID == nil ? 0.5 : 0.3)
+                    }
+                    .dropDestination(for: String.self) { items, location in
+                        guard let itemString = items.first,
+                              let itemID = UUID(uuidString: itemString) else { return false }
+                        return handleDropOnRoot(items: [itemID])
+                    } isTargeted: { isTargeted in
+                        // Visual feedback when dragging over root drop zone
                     }
                     
                     // Trash section
@@ -350,6 +348,56 @@ struct ContentView: View {
         }
     }
     
+    /// Folder row with drag & drop support
+    @ViewBuilder
+    private func folderRow(folder: NoteFolder) -> some View {
+        HStack {
+            Label(folder.name, systemImage: "folder")
+            Spacer()
+            Text("\(folder.notes.count)")
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(dragOverFolderID == folder.id ? Color.accentColor.opacity(0.3) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .tag(folder.id)
+        .draggable(folder.id.uuidString)
+        .dropDestination(for: String.self) { items, location in
+            dragOverFolderID = nil
+            guard let itemString = items.first,
+                  let itemID = UUID(uuidString: itemString) else { return false }
+            return handleDropOnFolder(items: [itemID], targetFolderID: folder.id)
+        } isTargeted: { isTargeted in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                dragOverFolderID = isTargeted ? folder.id : nil
+            }
+        }
+        .contextMenu {
+            Button {
+                addSubfolder(parentFolderID: folder.id)
+            } label: {
+                Text("New Folder")
+            }
+
+            Button {
+                startRenameFolder(folderID: folder.id)
+            } label: {
+                Text("Rename Folder")
+            }
+
+            Button(role: .destructive) {
+                deleteFolder(folderID: folder.id)
+            } label: {
+                Text("Delete Folder")
+            }
+        }
+    }
+    
     private func refreshTrash() {
         trashItems = vaultManager.scanTrash(currentFolders: folders)
     }
@@ -372,6 +420,7 @@ struct ContentView: View {
                         }
                         .padding(.vertical, 4)
                         .tag(note.id)
+                        .draggable(note.id.uuidString) // Drag note
                         .contextMenu {
                             Button {
                                 startRenameNote(noteID: note.id)
@@ -746,6 +795,270 @@ struct ContentView: View {
         #else
         return Font.custom(fontFamily, size: fontSize)
         #endif
+    }
+    
+    // MARK: - Drag & Drop Helpers
+    
+    /// Kiểm tra xem một UUID có thuộc về note không (không phải folder)
+    private func isNoteID(_ id: UUID) -> Bool {
+        func findInFolders(_ folders: [NoteFolder]) -> Bool {
+            for folder in folders {
+                if folder.notes.contains(where: { $0.id == id }) {
+                    return true
+                }
+                if findInFolders(folder.children) {
+                    return true
+                }
+            }
+            return false
+        }
+        return findInFolders(folders)
+    }
+    
+    /// Kiểm tra xem một UUID có thuộc về folder không
+    private func isFolderID(_ id: UUID) -> Bool {
+        func findInFolders(_ folders: [NoteFolder]) -> Bool {
+            for folder in folders {
+                if folder.id == id {
+                    return true
+                }
+                if findInFolders(folder.children) {
+                    return true
+                }
+            }
+            return false
+        }
+        return findInFolders(folders)
+    }
+    
+    /// Kiểm tra xem folder A có phải là con/cháu của folder B không (để tránh vòng lặp khi kéo thả)
+    private func isDescendant(folderID: UUID, ofFolderID parentID: UUID) -> Bool {
+        guard let parent = getFolder(folderID: parentID) else { return false }
+        
+        func checkChildren(_ children: [NoteFolder]) -> Bool {
+            for child in children {
+                if child.id == folderID {
+                    return true
+                }
+                if checkChildren(child.children) {
+                    return true
+                }
+            }
+            return false
+        }
+        
+        return checkChildren(parent.children)
+    }
+    
+    /// Tìm folder chứa note với ID cho trước
+    private func findFolderContainingNote(noteID: UUID) -> NoteFolder? {
+        func find(in folders: [NoteFolder]) -> NoteFolder? {
+            for folder in folders {
+                if folder.notes.contains(where: { $0.id == noteID }) {
+                    return folder
+                }
+                if let found = find(in: folder.children) {
+                    return found
+                }
+            }
+            return nil
+        }
+        return find(in: folders)
+    }
+    
+    /// Tìm và xóa note từ folder hiện tại, trả về note đã xóa
+    private func removeNoteFromCurrentFolder(noteID: UUID) -> NoteItem? {
+        func remove(from folders: inout [NoteFolder]) -> NoteItem? {
+            for i in folders.indices {
+                if let noteIndex = folders[i].notes.firstIndex(where: { $0.id == noteID }) {
+                    let note = folders[i].notes.remove(at: noteIndex)
+                    return note
+                }
+                if let note = remove(from: &folders[i].children) {
+                    return note
+                }
+            }
+            return nil
+        }
+        return remove(from: &folders)
+    }
+    
+    /// Thêm note vào folder đích
+    private func addNoteToFolder(note: NoteItem, folderID: UUID) {
+        updateFolder(folderID: folderID) { folder in
+            folder.notes.insert(note, at: 0)
+        }
+    }
+    
+    /// Di chuyển note từ folder này sang folder khác
+    private func moveNote(noteID: UUID, toFolderID: UUID) {
+        // Tìm folder nguồn
+        guard let sourceFolder = findFolderContainingNote(noteID: noteID) else {
+            print("❌ Cannot find source folder for note")
+            return
+        }
+        
+        // Không di chuyển nếu đã ở folder đích
+        guard sourceFolder.id != toFolderID else {
+            print("ℹ️ Note is already in target folder")
+            return
+        }
+        
+        // Lấy đường dẫn folder nguồn và đích
+        guard let sourcePath = vaultManager.getFolderPath(folderID: sourceFolder.id, in: folders),
+              let destPath = vaultManager.getFolderPath(folderID: toFolderID, in: folders) else {
+            print("❌ Cannot find folder paths")
+            return
+        }
+        
+        // Tìm note để lấy title
+        guard let note = sourceFolder.notes.first(where: { $0.id == noteID }) else {
+            print("❌ Cannot find note")
+            return
+        }
+        
+        // Di chuyển file trên disk trước
+        let success = vaultManager.moveNoteFile(
+            noteTitle: note.title,
+            fromFolderNames: sourcePath,
+            toFolderNames: destPath
+        )
+        
+        guard success else {
+            print("❌ Failed to move note file on disk")
+            return
+        }
+        
+        // Cập nhật in-memory: xóa note từ folder cũ, thêm vào folder mới
+        if let removedNote = removeNoteFromCurrentFolder(noteID: noteID) {
+            addNoteToFolder(note: removedNote, folderID: toFolderID)
+            
+            // Cập nhật selection
+            if selectedNoteID == noteID {
+                selectedFolderID = toFolderID
+            }
+            
+            // Lưu structure
+            saveAllToDisk()
+            print("✅ Moved note '\(note.title)' to new folder")
+        }
+    }
+    
+    /// Tìm và xóa folder từ vị trí hiện tại, trả về folder đã xóa
+    private func removeFolderFromParent(folderID: UUID) -> NoteFolder? {
+        func remove(from folders: inout [NoteFolder]) -> NoteFolder? {
+            for i in folders.indices {
+                if folders[i].id == folderID {
+                    return folders.remove(at: i)
+                }
+                if let folder = remove(from: &folders[i].children) {
+                    return folder
+                }
+            }
+            return nil
+        }
+        return remove(from: &folders)
+    }
+    
+    /// Di chuyển folder vào folder khác (thành subfolder)
+    private func moveFolder(folderID: UUID, toParentFolderID: UUID?) {
+        // Không di chuyển vào chính nó
+        if let targetID = toParentFolderID, folderID == targetID {
+            print("⚠️ Cannot move folder into itself")
+            return
+        }
+        
+        // Không di chuyển vào con/cháu của nó (tránh vòng lặp)
+        if let targetID = toParentFolderID, isDescendant(folderID: targetID, ofFolderID: folderID) {
+            print("⚠️ Cannot move folder into its descendant")
+            return
+        }
+        
+        // Lấy thông tin folder cần di chuyển
+        guard let folder = getFolder(folderID: folderID) else {
+            print("❌ Cannot find folder to move")
+            return
+        }
+        
+        // Lấy đường dẫn folder cha hiện tại (nếu có)
+        let sourceParentPath = vaultManager.getParentFolderPath(folderID: folderID, in: folders) ?? []
+        
+        // Lấy đường dẫn folder cha đích
+        let destParentPath: [String]
+        if let targetID = toParentFolderID {
+            guard let path = vaultManager.getFolderPath(folderID: targetID, in: folders) else {
+                print("❌ Cannot find target folder path")
+                return
+            }
+            destParentPath = path
+        } else {
+            destParentPath = [] // Di chuyển ra root
+        }
+        
+        // Kiểm tra xem folder đã ở vị trí đích chưa
+        if sourceParentPath == destParentPath {
+            print("ℹ️ Folder is already at target location")
+            return
+        }
+        
+        // Di chuyển trên disk trước
+        let success = vaultManager.moveFolderOnDisk(
+            folderName: folder.name,
+            fromParentNames: sourceParentPath,
+            toParentNames: destParentPath
+        )
+        
+        guard success else {
+            print("❌ Failed to move folder on disk")
+            return
+        }
+        
+        // Cập nhật in-memory
+        if let removedFolder = removeFolderFromParent(folderID: folderID) {
+            if let targetID = toParentFolderID {
+                // Thêm vào folder đích
+                updateFolder(folderID: targetID) { parent in
+                    parent.children.insert(removedFolder, at: 0)
+                }
+            } else {
+                // Thêm vào root
+                folders.insert(removedFolder, at: 0)
+            }
+            
+            // Lưu structure
+            saveAllToDisk()
+            print("✅ Moved folder '\(folder.name)' to new location")
+        }
+    }
+    
+    /// Xử lý drop vào folder (có thể là note hoặc folder)
+    private func handleDropOnFolder(items: [UUID], targetFolderID: UUID) -> Bool {
+        guard let itemID = items.first else { return false }
+        
+        if isNoteID(itemID) {
+            // Đây là note - di chuyển note vào folder
+            moveNote(noteID: itemID, toFolderID: targetFolderID)
+            return true
+        } else if isFolderID(itemID) {
+            // Đây là folder - di chuyển folder thành subfolder
+            moveFolder(folderID: itemID, toParentFolderID: targetFolderID)
+            return true
+        }
+        
+        return false
+    }
+    
+    /// Xử lý drop vào root (chỉ cho folder)
+    private func handleDropOnRoot(items: [UUID]) -> Bool {
+        guard let itemID = items.first else { return false }
+        
+        if isFolderID(itemID) {
+            // Di chuyển folder ra root
+            moveFolder(folderID: itemID, toParentFolderID: nil)
+            return true
+        }
+        
+        return false
     }
 
     private func highlightedText(_ text: String, searchText: String) -> Text {
