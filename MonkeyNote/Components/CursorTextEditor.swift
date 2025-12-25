@@ -699,6 +699,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     var autocompleteDelay: Double
     var autocompleteOpacity: Double
     var suggestionMode: String
+    var horizontalPadding: CGFloat = 0
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -738,7 +739,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.isEditable = true
         textView.isSelectable = true
         textView.drawsBackground = false
-        textView.textContainerInset = NSSize(width: 0, height: 0)
+        textView.textContainerInset = NSSize(width: horizontalPadding, height: 0)
         
         // Critical settings for proper scrolling
         textView.minSize = NSSize(width: 0, height: 0)

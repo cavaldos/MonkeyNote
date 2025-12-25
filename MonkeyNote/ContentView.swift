@@ -199,7 +199,8 @@ struct ContentView: View {
             autocompleteEnabled: autocompleteEnabled,
             autocompleteDelay: autocompleteDelay,
             autocompleteOpacity: autocompleteOpacity,
-            suggestionMode: suggestionMode
+            suggestionMode: suggestionMode,
+            horizontalPadding: 46
         )
         .overlay(alignment: .topLeading) {
             if selectedNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -207,7 +208,7 @@ struct ContentView: View {
                     .font(.system(size: fontSize, weight: .regular, design: fontDesign))
                     .foregroundStyle(isDarkMode ? .white.opacity(0.25) : .black.opacity(0.25))
                     .padding(.top, 0)
-                    .padding(.leading, 8)
+                    .padding(.leading, 46 + 8)  // horizontalPadding + extra
                     .allowsHitTesting(false)
             }
         }
@@ -437,7 +438,6 @@ struct ContentView: View {
 
                     editor
                         .padding(.top, 28)
-                        .padding(.horizontal, 46)
                 }
                 .safeAreaInset(edge: .bottom) {
                     statusBar
