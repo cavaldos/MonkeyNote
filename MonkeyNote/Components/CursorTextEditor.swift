@@ -132,6 +132,24 @@ private class ThickCursorTextView: NSTextView {
                         self.setSelectedRange(NSRange(location: prevCharIndex + newText.utf16.count, length: 0))
                         return
                     }
+                    
+                    // Check for numbered list pattern like "1."
+                    if prevCharIndex >= 1 {
+                        let twoCharsBefore = text.substring(with: NSRange(location: prevCharIndex - 1, length: 2))
+                        if let regex = try? NSRegularExpression(pattern: "^\\d\\.", options: []),
+                           regex.firstMatch(in: twoCharsBefore, options: [], range: NSRange(location: 0, length: 2)) != nil {
+                            let lineRange = text.lineRange(for: NSRange(location: prevCharIndex - 1, length: 0))
+                            let rangeAfterNumber = NSRange(location: prevCharIndex + 1, length: lineRange.location + lineRange.length - prevCharIndex - 1)
+                            let remainingText = text.substring(with: rangeAfterNumber)
+                            
+                            // Replace the entire line from number to end with proper numbered list format
+                            let lineAfterNumber = NSRange(location: prevCharIndex - 1, length: lineRange.location + lineRange.length - (prevCharIndex - 1))
+                            let newText = twoCharsBefore + " " + remainingText.trimmingCharacters(in: .whitespacesAndNewlines)
+                            self.replaceCharacters(in: lineAfterNumber, with: newText)
+                            self.setSelectedRange(NSRange(location: prevCharIndex - 1 + newText.utf16.count, length: 0))
+                            return
+                        }
+                    }
                 }
             }
             
@@ -159,6 +177,31 @@ private class ThickCursorTextView: NSTextView {
                 } else {
                     super.insertText("\n• ")
                     self.setSelectedRange(NSRange(location: selectedRange.location + "\n• ".utf16.count, length: 0))
+                }
+                return
+            }
+            
+            // Handle numbered list
+            if let regex = try? NSRegularExpression(pattern: "^(\\d+)\\.", options: []),
+               let match = regex.firstMatch(in: trimmedLine, options: [], range: NSRange(location: 0, length: trimmedLine.utf16.count)) {
+                let numberRange = match.range(at: 1)
+                let numberString = (trimmedLine as NSString).substring(with: numberRange)
+                let number = Int(numberString) ?? 1
+                let contentStart = match.range.location + match.range.length
+                let contentLength = trimmedLine.utf16.count - contentStart
+                let content = (trimmedLine as NSString).substring(with: NSRange(location: contentStart, length: contentLength)).trimmingCharacters(in: .whitespaces)
+                
+                if content.isEmpty {
+                    let linesBefore = text.substring(with: NSRange(location: 0, length: lineRange.location))
+                    let linesAfter = text.substring(with: NSRange(location: lineRange.location + lineRange.length, length: text.length - (lineRange.location + lineRange.length)))
+                    let newString = linesBefore + linesAfter
+                    self.string = newString
+                    self.setSelectedRange(NSRange(location: lineRange.location, length: 0))
+                } else {
+                    let nextNumber = number + 1
+                    let nextLineText = "\n\(nextNumber). "
+                    super.insertText(nextLineText)
+                    self.setSelectedRange(NSRange(location: selectedRange.location + nextLineText.utf16.count, length: 0))
                 }
                 return
             }
