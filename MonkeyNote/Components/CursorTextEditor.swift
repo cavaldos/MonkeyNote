@@ -186,6 +186,9 @@ private class ThickCursorTextView: NSTextView {
     private var currentSuggestion: String?
     private var suggestionWordStart: Int = 0
     private var suggestionTask: Task<Void, Never>?
+    
+    // Selection toolbar
+    private var selectionToolbarController = SelectionToolbarController.shared
 
     override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
         let shouldDraw = cursorBlinkEnabled ? flag : true
@@ -677,6 +680,133 @@ private class ThickCursorTextView: NSTextView {
         super.deleteBackward(sender)
         // Update suggestion after deletion
         updateSuggestion()
+    }
+    
+    override func setSelectedRange(_ charRange: NSRange) {
+        super.setSelectedRange(charRange)
+        handleSelectionChange()
+    }
+    
+    override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {
+        super.setSelectedRange(charRange, affinity: affinity, stillSelecting: stillSelectingFlag)
+        if !stillSelectingFlag {
+            handleSelectionChange()
+        }
+    }
+    
+    private func handleSelectionChange() {
+        let selectedRange = self.selectedRange()
+        
+        // Only show toolbar when there's a selection (not just cursor)
+        if selectedRange.length > 0 {
+            showSelectionToolbar(for: selectedRange)
+        } else {
+            selectionToolbarController.dismiss()
+        }
+    }
+    
+    private func showSelectionToolbar(for range: NSRange) {
+        guard let layoutManager = layoutManager,
+              let textContainer = textContainer,
+              let window = self.window else { return }
+        
+        // Get the rect of the selected text
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        var selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        selectionRect.origin.x += textContainerInset.width
+        selectionRect.origin.y += textContainerInset.height
+        
+        // Convert to window coordinates
+        let rectInView = convert(selectionRect, to: nil)
+        let rectInScreen = window.convertToScreen(NSRect(
+            origin: rectInView.origin,
+            size: CGSize(width: selectionRect.width, height: selectionRect.height)
+        ))
+        
+        // Position toolbar above the selection (centered)
+        let toolbarPoint = NSPoint(
+            x: rectInScreen.midX,
+            y: rectInScreen.maxY
+        )
+        
+        selectionToolbarController.show(
+            at: toolbarPoint,
+            in: window,
+            selectionRange: range,
+            onAction: { [weak self] (action: ToolbarAction, selectionRange: NSRange) in
+                self?.applyFormatting(action: action, range: selectionRange)
+            }
+        )
+    }
+    
+    private func applyFormatting(action: ToolbarAction, range: NSRange) {
+        let text = self.string as NSString
+        let selectedText = text.substring(with: range)
+        
+        var newText = selectedText
+        
+        switch action {
+        case .bold:
+            newText = "**\(selectedText)**"
+        case .italic:
+            newText = "_\(selectedText)_"
+        case .underline:
+            newText = "<u>\(selectedText)</u>"
+        case .strikethrough:
+            newText = "~~\(selectedText)~~"
+        case .highlight:
+            newText = "==\(selectedText)=="
+        case .link:
+            newText = "[\(selectedText)](url)"
+        case .heading:
+            // Add heading marker at the beginning of line
+            let lineRange = text.lineRange(for: range)
+            let lineStart = lineRange.location
+            let currentLine = text.substring(with: lineRange)
+            
+            if currentLine.hasPrefix("### ") {
+                // Remove heading
+                replaceCharacters(in: NSRange(location: lineStart, length: 4), with: "")
+            } else if currentLine.hasPrefix("## ") {
+                // H2 -> H3
+                replaceCharacters(in: NSRange(location: lineStart, length: 3), with: "### ")
+            } else if currentLine.hasPrefix("# ") {
+                // H1 -> H2
+                replaceCharacters(in: NSRange(location: lineStart, length: 2), with: "## ")
+            } else {
+                // Add H1
+                replaceCharacters(in: NSRange(location: lineStart, length: 0), with: "# ")
+            }
+            return
+        case .list:
+            // Add bullet at the beginning of line
+            let lineRange = text.lineRange(for: range)
+            let lineStart = lineRange.location
+            let currentLine = text.substring(with: lineRange)
+            
+            if currentLine.hasPrefix("• ") || currentLine.hasPrefix("- ") {
+                // Remove bullet
+                replaceCharacters(in: NSRange(location: lineStart, length: 2), with: "")
+            } else {
+                // Add bullet
+                replaceCharacters(in: NSRange(location: lineStart, length: 0), with: "• ")
+            }
+            return
+        case .alignLeft:
+            // Alignment is not typically supported in plain markdown
+            return
+        case .askAI:
+            // TODO: Implement AI feature
+            print("Ask AI with selected text: \(selectedText)")
+            return
+        }
+        
+        // Replace selected text with formatted text
+        replaceCharacters(in: range, with: newText)
+        
+        // Update cursor position
+        let newCursorPosition = range.location + newText.utf16.count
+        setSelectedRange(NSRange(location: newCursorPosition, length: 0))
     }
     
     override func layout() {
