@@ -143,6 +143,13 @@ class WordSuggestionManager {
         return nil
     }
     
+    // MARK: - Sentence Suggestion (Beta)
+    func getSentenceSuggestion() -> String {
+        // TODO: Replace this with actual sentence suggestion logic
+        // This is a placeholder for future development
+        return "this is a test version of the sentence suggestion feature"
+    }
+    
     var customWordCount: Int {
         return customWords.count
     }
@@ -165,6 +172,7 @@ private class ThickCursorTextView: NSTextView {
     var autocompleteEnabled: Bool = true
     var autocompleteDelay: Double = 0.0
     var autocompleteOpacity: Double = 0.5
+    var suggestionMode: String = "word"  // "word" or "sentence"
     private var cursorLayer: CALayer?
     private var lastCursorRect: NSRect = .zero
     private var highlightLayers: [CALayer] = []
@@ -304,13 +312,23 @@ private class ThickCursorTextView: NSTextView {
             return
         }
         
-        // Get current word being typed
         let cursorPosition = selectedRange.location
         guard cursorPosition > 0 else {
             hideSuggestion()
             return
         }
         
+        // Check suggestion mode
+        if suggestionMode == "sentence" {
+            // Sentence mode: always show beta message
+            let suggestion = WordSuggestionManager.shared.getSentenceSuggestion()
+            currentSuggestion = suggestion
+            suggestionWordStart = cursorPosition
+            showGhostText(suggestion, at: cursorPosition)
+            return
+        }
+        
+        // Word mode: find word and suggest completion
         // Find word start
         var wordStart = cursorPosition
         while wordStart > 0 {
@@ -680,6 +698,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     var autocompleteEnabled: Bool
     var autocompleteDelay: Double
     var autocompleteOpacity: Double
+    var suggestionMode: String
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -713,6 +732,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.autocompleteEnabled = autocompleteEnabled
         textView.autocompleteDelay = autocompleteDelay
         textView.autocompleteOpacity = autocompleteOpacity
+        textView.suggestionMode = suggestionMode
         textView.isRichText = false
         textView.allowsUndo = true
         textView.isEditable = true
@@ -779,6 +799,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.autocompleteEnabled = autocompleteEnabled
         textView.autocompleteDelay = autocompleteDelay
         textView.autocompleteOpacity = autocompleteOpacity
+        textView.suggestionMode = suggestionMode
         if let layoutManager = textView.layoutManager as? ThickCursorLayoutManager {
             layoutManager.cursorWidth = cursorWidth
         }

@@ -7,6 +7,25 @@
 
 import SwiftUI
 
+enum SuggestionMode: String, CaseIterable {
+    case word = "word"
+    case sentence = "sentence"
+    
+    var displayName: String {
+        switch self {
+        case .word: return "Word"
+        case .sentence: return "Sentence"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .word: return "textformat.abc"
+        case .sentence: return "text.quote"
+        }
+    }
+}
+
 enum SettingsTab: String, CaseIterable {
     case appearance = "Appearance"
     case autocomplete = "Autocomplete"
@@ -32,6 +51,7 @@ struct SettingsView: View {
     @AppStorage("note.autocompleteOpacity") private var autocompleteOpacity: Double = 0.5
     @AppStorage("note.useBuiltInDictionary") private var useBuiltInDictionary: Bool = true
     @AppStorage("note.minWordLength") private var minWordLength: Int = 4
+    @AppStorage("note.suggestionMode") private var suggestionMode: String = "word"
 
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var vaultManager: VaultManager
@@ -197,33 +217,65 @@ struct SettingsView: View {
     // MARK: - Autocomplete Tab
     private var autocompleteContent: some View {
         VStack(alignment: .leading, spacing: 24) {
-            settingsSection("Word Suggestions") {
+            settingsSection("Autocomplete") {
                 VStack(alignment: .leading, spacing: 16) {
                     Toggle("Enable Autocomplete", isOn: $autocompleteEnabled)
                 }
             }
             
             if autocompleteEnabled {
-                settingsSection("Word Filter") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Minimum Word Length: \(minWordLength) characters")
-                            .font(.subheadline)
-                        Slider(value: Binding(
-                            get: { Double(minWordLength) },
-                            set: { minWordLength = Int($0) }
-                        ), in: 2...8, step: 1)
-                            .frame(maxWidth: 250)
-                        Text("Words shorter than this will not be suggested (e.g., 'a', 'the', 'is')")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .onChange(of: minWordLength) { _, newValue in
-                        WordSuggestionManager.shared.setMinWordLength(newValue)
+                settingsSection("Suggestion Mode") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Picker("Mode", selection: $suggestionMode) {
+                            ForEach(SuggestionMode.allCases, id: \.rawValue) { mode in
+                                Label(mode.displayName, systemImage: mode.icon)
+                                    .tag(mode.rawValue)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 250)
+                        
+                        // Warning message for sentence mode
+                        if suggestionMode == SuggestionMode.sentence.rawValue {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                Text("This feature is under development")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.orange)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.orange.opacity(0.15))
+                            )
+                        }
                     }
                 }
                 
-                settingsSection("Custom Word Dictionary") {
-                    VStack(alignment: .leading, spacing: 12) {
+                // Only show word-related settings when in word mode
+                if suggestionMode == SuggestionMode.word.rawValue {
+                    settingsSection("Word Filter") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Minimum Word Length: \(minWordLength) characters")
+                                .font(.subheadline)
+                            Slider(value: Binding(
+                                get: { Double(minWordLength) },
+                                set: { minWordLength = Int($0) }
+                            ), in: 2...8, step: 1)
+                                .frame(maxWidth: 250)
+                            Text("Words shorter than this will not be suggested (e.g., 'a', 'the', 'is')")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .onChange(of: minWordLength) { _, newValue in
+                            WordSuggestionManager.shared.setMinWordLength(newValue)
+                        }
+                    }
+                    
+                    settingsSection("Custom Word Dictionary") {
+                        VStack(alignment: .leading, spacing: 12) {
                         if let folderURL = WordSuggestionManager.shared.getCustomFolderURL() {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
@@ -287,6 +339,7 @@ struct SettingsView: View {
                             }
                     }
                 }
+                } // End of word mode settings
                 
                 settingsSection("Timing") {
                     VStack(alignment: .leading, spacing: 8) {

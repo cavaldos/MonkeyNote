@@ -40,6 +40,7 @@ struct ContentView: View {
     @AppStorage("note.autocompleteEnabled") private var autocompleteEnabled: Bool = true
     @AppStorage("note.autocompleteDelay") private var autocompleteDelay: Double = 0.0
     @AppStorage("note.autocompleteOpacity") private var autocompleteOpacity: Double = 0.5
+    @AppStorage("note.suggestionMode") private var suggestionMode: String = "word"
 
     private var selectedFolderPath: [Int]? {
         guard let selectedFolderID = selectedFolderID else { return nil }
@@ -197,7 +198,8 @@ struct ContentView: View {
             searchText: searchText,
             autocompleteEnabled: autocompleteEnabled,
             autocompleteDelay: autocompleteDelay,
-            autocompleteOpacity: autocompleteOpacity
+            autocompleteOpacity: autocompleteOpacity,
+            suggestionMode: suggestionMode
         )
         .overlay(alignment: .topLeading) {
             if selectedNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
