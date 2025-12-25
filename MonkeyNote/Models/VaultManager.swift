@@ -422,12 +422,24 @@ class VaultManager: ObservableObject {
     // MARK: - Helpers
     
     private func sanitizeFileName(_ name: String) -> String {
-        let invalidCharacters = CharacterSet(charactersIn: ":/\\?*|\"<>")
-        var sanitized = name
-            .components(separatedBy: invalidCharacters)
-            .joined(separator: "_")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // Chỉ giữ lại chữ cái, số, khoảng trắng, gạch nối và gạch dưới
+        let allowedCharacters = CharacterSet.alphanumerics
+            .union(CharacterSet(charactersIn: " -_"))
         
+        var sanitized = ""
+        for character in name {
+            if allowedCharacters.contains(character.unicodeScalars.first!) {
+                sanitized += String(character)
+            }
+        }
+        
+        // Thay thế nhiều khoảng trắng liên tiếp bằng một khoảng trắng
+        sanitized = sanitized.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        
+        // Xóa khoảng trắng ở đầu và cuối
+        sanitized = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Xóa dấu chấm ở đầu
         while sanitized.hasPrefix(".") {
             sanitized.removeFirst()
         }

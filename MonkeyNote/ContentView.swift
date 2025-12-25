@@ -604,7 +604,27 @@ struct ContentView: View {
     private func firstLineTitle(from text: String) -> String {
         let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
         let trimmed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Untitled" : String(trimmed.prefix(60))
+        if trimmed.isEmpty { return "Untitled" }
+        
+        // Loại bỏ các ký tự đặc biệt, chỉ giữ lại chữ, số, khoảng trắng, gạch nối và gạch dưới
+        let allowedCharacters = CharacterSet.alphanumerics
+            .union(CharacterSet(charactersIn: " -_"))
+        
+        var sanitized = ""
+        for character in trimmed {
+            if allowedCharacters.contains(character.unicodeScalars.first!) {
+                sanitized += String(character)
+            }
+        }
+        
+        // Thay thế nhiều khoảng trắng liên tiếp bằng một khoảng trắng
+        sanitized = sanitized.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        
+        // Xóa khoảng trắng ở đầu và cuối
+        sanitized = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        let result = sanitized.isEmpty ? "Untitled" : String(sanitized.prefix(60))
+        return result
     }
 
     private func notePreview(for text: String) -> String {
