@@ -257,6 +257,10 @@ private class ThickCursorTextView: NSTextView {
             ghostTextLayer = layer
         }
         
+        // Disable all animations for ghost text
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        
         // Configure the ghost text with opacity from settings
         let font = self.font ?? NSFont.systemFont(ofSize: 14)
         ghostTextLayer?.font = font
@@ -276,11 +280,19 @@ private class ThickCursorTextView: NSTextView {
             height: cursorRect.height
         )
         ghostTextLayer?.isHidden = false
+        
+        CATransaction.commit()
     }
     
     private func hideSuggestion() {
         suggestionTask?.cancel()
+        
+        // Disable animation when hiding
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         ghostTextLayer?.isHidden = true
+        CATransaction.commit()
+        
         currentSuggestion = nil
     }
     

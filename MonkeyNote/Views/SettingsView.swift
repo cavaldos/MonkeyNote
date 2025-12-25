@@ -28,7 +28,7 @@ struct SettingsView: View {
     @AppStorage("note.cursorAnimationEnabled") private var cursorAnimationEnabled: Bool = true
     @AppStorage("note.cursorAnimationDuration") private var cursorAnimationDuration: Double = 0.15
     @AppStorage("note.autocompleteEnabled") private var autocompleteEnabled: Bool = true
-    @AppStorage("note.autocompleteDelay") private var autocompleteDelay: Double = 0.0
+    @AppStorage("note.autocompleteDelay") private var autocompleteDelay: Double = 0.05
     @AppStorage("note.autocompleteOpacity") private var autocompleteOpacity: Double = 0.5
 
     @Environment(\.dismiss) private var dismiss
@@ -211,9 +211,12 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Suggestion Delay: \(Int(autocompleteDelay * 1000))ms")
                             .font(.subheadline)
-                        Slider(value: $autocompleteDelay, in: 0...1.0, step: 0.05)
+                        Slider(value: $autocompleteDelay, in: 0...0.5, step: 0.05)
                             .frame(maxWidth: 250)
                         Text("How long to wait before showing suggestions")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Recommended: 50ms")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
