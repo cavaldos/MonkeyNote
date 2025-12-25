@@ -415,6 +415,8 @@ struct ContentView: View {
     private var detailEditor: some View {
         ZStack {
             background
+            (isDarkMode ? Color.black.opacity(0.16) : Color.black.opacity(0.04))
+                .ignoresSafeArea()
 
             if selectedNoteIndex == nil {
                 Text("Select a note")
@@ -428,15 +430,12 @@ struct ContentView: View {
                     editor
                         .padding(.top, 28)
                         .padding(.horizontal, 46)
-                        .background(
-                            RoundedRectangle(cornerRadius: 1, style: .continuous)
-                                .fill(isDarkMode ? Color.black.opacity(0.16) : Color.black.opacity(0.04))
-                        )
-
-                    Spacer(minLength: 0)
-
+                }
+                .safeAreaInset(edge: .bottom) {
                     statusBar
-                        .padding(.bottom, 18)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 2)
+                        .padding(.bottom, 10)
                 }
             }
         }
