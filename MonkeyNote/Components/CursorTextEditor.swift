@@ -104,6 +104,66 @@ private class ThickCursorTextView: NSTextView {
         }
     }
 
+    override func keyDown(with event: NSEvent) {
+        guard !event.isARepeat else {
+            super.keyDown(with: event)
+            return
+        }
+        
+        if event.keyCode == 48 {
+            let selectedRange = self.selectedRange()
+            let text = self.string as NSString
+            
+            if selectedRange.location > 0 {
+                let prevCharIndex = selectedRange.location - 1
+                if prevCharIndex < text.length {
+                    let prevChar = text.substring(with: NSRange(location: prevCharIndex, length: 1))
+                    if prevChar == "-" {
+                        let lineRange = text.lineRange(for: NSRange(location: prevCharIndex, length: 0))
+                        let currentLine = text.substring(with: lineRange)
+                        let trimmedLine = currentLine.trimmingCharacters(in: .whitespaces)
+                        
+                        if trimmedLine == "-" {
+                            self.replaceCharacters(in: NSRange(location: prevCharIndex, length: 1), with: "• ")
+                            self.setSelectedRange(NSRange(location: prevCharIndex + "• ".utf16.count, length: 0))
+                            return
+                        }
+                    }
+                }
+            }
+            
+            super.insertText("\t")
+            return
+        }
+        
+        if event.keyCode == 36 {
+            let selectedRange = self.selectedRange()
+            let text = self.string as NSString
+            
+            let lineRange = text.lineRange(for: selectedRange)
+            let currentLine = text.substring(with: lineRange)
+            let trimmedLine = currentLine.trimmingCharacters(in: .whitespaces)
+            
+            if trimmedLine.hasPrefix("• ") {
+                let bulletContent = trimmedLine.dropFirst("• ".count).trimmingCharacters(in: .whitespaces)
+                
+                if bulletContent.isEmpty {
+                    let linesBefore = text.substring(with: NSRange(location: 0, length: lineRange.location))
+                    let linesAfter = text.substring(with: NSRange(location: lineRange.location + lineRange.length, length: text.length - (lineRange.location + lineRange.length)))
+                    let newString = linesBefore + linesAfter
+                    self.string = newString
+                    self.setSelectedRange(NSRange(location: lineRange.location, length: 0))
+                } else {
+                    super.insertText("\n• ")
+                    self.setSelectedRange(NSRange(location: selectedRange.location + "\n• ".utf16.count, length: 0))
+                }
+                return
+            }
+        }
+        
+        super.keyDown(with: event)
+    }
+    
     override func layout() {
         super.layout()
         updateHighlights()
