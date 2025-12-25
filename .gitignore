@@ -1,0 +1,45 @@
+# Xcode & Swift
+.DS_Store
+build/
+DerivedData/
+*.xcworkspace
+xcuserdata/
+*.xcuserdatad/
+*.xcuserstate
+*.xcodeproj/project.xcworkspace/
+**/xcuserdata/
+**/xcuserdata/**
+
+# Swift Package Manager
+.build/
+Packages/
+.swiftpm
+
+# CocoaPods
+Pods/
+
+# Carthage
+Carthage/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+
+# macOS
+*.DS_Store
+
+# Secrets
+.env
+.env.*
+
+# Generated app files
+*.app
+*.dSYM
+
+# Editor directories
+.vscode/
+.idea/
+
+# Other
+*.swp

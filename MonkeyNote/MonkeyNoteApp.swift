@@ -13,5 +13,6 @@ struct MonkeyNoteApp: App {
         WindowGroup {
             ContentView()
         }
+        .windowStyle(.hiddenTitleBar)
     }
-}
+} 
