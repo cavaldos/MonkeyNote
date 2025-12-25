@@ -11,20 +11,40 @@ import AppKit
 
 // MARK: - Slash Command Menu
 enum SlashCommand: String, CaseIterable {
+    case heading1 = "Heading 1"
+    case heading2 = "Heading 2"
+    case heading3 = "Heading 3"
     case bulletedList = "Bulleted List"
     case numberedList = "Numbered List"
+    case quote = "Quote"
     
     var icon: String {
         switch self {
+        case .heading1: return "h1"
+        case .heading2: return "h2"
+        case .heading3: return "h3"
         case .bulletedList: return "list.bullet"
         case .numberedList: return "list.number"
+        case .quote: return "text.quote"
         }
     }
     
     var prefix: String {
         switch self {
+        case .heading1: return "# "
+        case .heading2: return "## "
+        case .heading3: return "### "
         case .bulletedList: return "• "
         case .numberedList: return "1. "
+        case .quote: return ">  "
+        }
+    }
+    
+    // Custom SF Symbol or text for header icons
+    var useTextIcon: Bool {
+        switch self {
+        case .heading1, .heading2, .heading3: return true
+        default: return false
         }
     }
 }
@@ -33,6 +53,7 @@ enum SlashCommand: String, CaseIterable {
 class SlashCommandItemView: NSControl {
     private var textField: NSTextField!
     private var iconView: NSImageView!
+    private var iconLabel: NSTextField!  // For text-based icons like H1, H2, H3
     private var backgroundLayer: CALayer!
     private var command: SlashCommand?
     private var isItemSelected: Bool = false
@@ -55,11 +76,19 @@ class SlashCommandItemView: NSControl {
         backgroundLayer.backgroundColor = NSColor.clear.cgColor
         layer?.addSublayer(backgroundLayer)
         
-        // Icon
+        // Icon (SF Symbol)
         iconView = NSImageView()
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.contentTintColor = .white.withAlphaComponent(0.85)
         addSubview(iconView)
+        
+        // Icon Label (for text icons like H1, H2, H3)
+        iconLabel = NSTextField(labelWithString: "")
+        iconLabel.font = .systemFont(ofSize: 11, weight: .bold)
+        iconLabel.textColor = .white.withAlphaComponent(0.85)
+        iconLabel.translatesAutoresizingMaskIntoConstraints = false
+        iconLabel.alignment = .center
+        addSubview(iconLabel)
         
         // Text
         textField = NSTextField(labelWithString: "")
@@ -74,6 +103,10 @@ class SlashCommandItemView: NSControl {
             iconView.widthAnchor.constraint(equalToConstant: 16),
             iconView.heightAnchor.constraint(equalToConstant: 16),
             
+            iconLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            iconLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconLabel.widthAnchor.constraint(equalToConstant: 16),
+            
             textField.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
             textField.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
@@ -87,7 +120,19 @@ class SlashCommandItemView: NSControl {
     func configure(with command: SlashCommand, isSelected: Bool) {
         self.command = command
         textField.stringValue = command.rawValue
-        iconView.image = NSImage(systemSymbolName: command.icon, accessibilityDescription: nil)
+        
+        if command.useTextIcon {
+            // Use text icon (H1, H2, H3)
+            iconView.isHidden = true
+            iconLabel.isHidden = false
+            iconLabel.stringValue = command.icon.uppercased()
+        } else {
+            // Use SF Symbol
+            iconView.isHidden = false
+            iconLabel.isHidden = true
+            iconView.image = NSImage(systemSymbolName: command.icon, accessibilityDescription: nil)
+        }
+        
         setSelected(isSelected)
     }
     

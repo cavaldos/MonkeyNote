@@ -164,15 +164,17 @@ private class ThickCursorLayoutManager: NSLayoutManager {
     
     // Custom attribute key for rounded background
     static let roundedBackgroundColorKey = NSAttributedString.Key("roundedBackgroundColor")
+    // Custom attribute key for blockquote bar
+    static let blockquoteBarKey = NSAttributedString.Key("blockquoteBar")
     
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
         
-        // Draw rounded backgrounds for inline code
         guard let textStorage = textStorage else { return }
         
         let characterRange = self.characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
         
+        // Draw rounded backgrounds for inline code
         textStorage.enumerateAttribute(Self.roundedBackgroundColorKey, in: characterRange, options: []) { value, range, _ in
             guard let color = value as? NSColor else { return }
             
@@ -195,6 +197,27 @@ private class ThickCursorLayoutManager: NSLayoutManager {
                 // Draw rounded rectangle
                 let path = NSBezierPath(roundedRect: adjustedRect, xRadius: 5, yRadius: 5)
                 color.setFill()
+                path.fill()
+            }
+        }
+        
+        // Draw vertical bar for blockquotes
+        textStorage.enumerateAttribute(Self.blockquoteBarKey, in: characterRange, options: []) { value, range, _ in
+            guard value != nil else { return }
+            
+            let glyphRange = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            
+            // Get the bounding rect for this line
+            self.enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: textContainers.first!) { rect, _ in
+                var barRect = rect
+                barRect.origin.x = origin.x + 2  // Small offset from left edge
+                barRect.origin.y += origin.y
+                barRect.size.width = 3  // Bar width
+                
+                // Draw the vertical bar
+                let barColor = NSColor.gray
+                let path = NSBezierPath(roundedRect: barRect, xRadius: 1.5, yRadius: 1.5)
+                barColor.setFill()
                 path.fill()
             }
         }
@@ -621,6 +644,35 @@ private class ThickCursorTextView: NSTextView {
             }
             
             super.insertText("\t")
+            return
+        }
+        
+        // Handle Shift + Enter - soft line break (continue same list item)
+        if event.keyCode == 36 && event.modifierFlags.contains(.shift) {
+            let selectedRange = self.selectedRange()
+            let text = self.string as NSString
+            
+            let lineRange = text.lineRange(for: selectedRange)
+            let currentLine = text.substring(with: lineRange)
+            let trimmedLine = currentLine.trimmingCharacters(in: .whitespaces)
+            
+            // Check if we're in a numbered list
+            if let regex = try? NSRegularExpression(pattern: "^(\\d+)\\.", options: []),
+               regex.firstMatch(in: trimmedLine, options: [], range: NSRange(location: 0, length: trimmedLine.utf16.count)) != nil {
+                // Insert newline with indent (3 spaces to align with text after "1. ")
+                super.insertText("\n   ")
+                return
+            }
+            
+            // Check if we're in a bullet list
+            if trimmedLine.hasPrefix("•") {
+                // Insert newline with indent (2 spaces to align with text after "• ")
+                super.insertText("\n  ")
+                return
+            }
+            
+            // Default: just insert newline
+            super.insertText("\n")
             return
         }
         

@@ -23,6 +23,7 @@ enum MarkdownStyle {
     case image          // ![alt](url)
     case numberedList   // 1. 2. 3. etc.
     case bulletList     // • bullet
+    case blockquote     // > quote
 }
 
 // MARK: - Markdown Match
@@ -59,6 +60,9 @@ class MarkdownParser {
             // Bullet list - match bullet at start of line (only the bullet, not the space)
             ("^(•)", .bulletList, 0, 0),
             
+            // Blockquote - match > at start of line with content
+            ("^> (.+)$", .blockquote, 2, 0),
+            
             // Bold + Italic (must come before bold and italic)
             ("\\*\\*\\*([^*]+)\\*\\*\\*", .boldItalic, 3, 3),
             ("___([^_]+)___", .boldItalic, 3, 3),
@@ -92,7 +96,7 @@ class MarkdownParser {
             do {
                 let options: NSRegularExpression.Options
                 switch definition.style {
-                case .heading1, .heading2, .heading3, .numberedList, .bulletList:
+                case .heading1, .heading2, .heading3, .numberedList, .bulletList, .blockquote:
                     options = [.anchorsMatchLines]
                 default:
                     options = []
@@ -267,7 +271,7 @@ extension MarkdownParser {
             
         case .strikethrough:
             attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
-            attributes[.strikethroughColor] = NSColor.systemRed
+            attributes[.strikethroughColor] = NSColor.gray
             attributes[.foregroundColor] = NSColor.gray
             
         case .highlight:
@@ -315,6 +319,13 @@ extension MarkdownParser {
         case .bulletList:
             // Purple color for bullet markers (•)
             attributes[.foregroundColor] = NSColor(red: 0.7, green: 0.4, blue: 0.9, alpha: 1.0) // Purple
+            
+        case .blockquote:
+            // Gray text for blockquote content
+            attributes[.foregroundColor] = NSColor.gray
+            // Custom key for vertical bar rendering (handled by LayoutManager)
+            let blockquoteBarKey = NSAttributedString.Key("blockquoteBar")
+            attributes[blockquoteBarKey] = true
         }
         
         return attributes
