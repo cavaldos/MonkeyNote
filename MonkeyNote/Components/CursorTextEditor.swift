@@ -22,6 +22,10 @@ private class ThickCursorTextView: NSTextView {
     private var cursorLayer: CALayer?
     private var lastCursorRect: NSRect = .zero
     private var highlightLayers: [CALayer] = []
+    
+    // Slash command menu
+    private var slashCommandController = SlashCommandWindowController()
+    private var slashCommandRange: NSRange?
 
     override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
         let shouldDraw = cursorBlinkEnabled ? flag : true
@@ -111,8 +115,83 @@ private class ThickCursorTextView: NSTextView {
             searchRange.length = text.utf16.count - searchRange.location
         }
     }
+    
+    // MARK: - Slash Command Menu
+    private func showSlashMenu() {
+        guard let layoutManager = layoutManager,
+              let textContainer = textContainer,
+              let window = self.window else { return }
+        
+        let selectedRange = self.selectedRange()
+        slashCommandRange = NSRange(location: selectedRange.location - 1, length: 1) // The "/" character
+        
+        // Get cursor position in window coordinates
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: selectedRange, actualCharacterRange: nil)
+        var cursorRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        cursorRect.origin.x += textContainerInset.width
+        cursorRect.origin.y += textContainerInset.height
+        
+        // Convert to window coordinates
+        let rectInView = convert(cursorRect, to: nil)
+        let rectInWindow = window.convertToScreen(NSRect(origin: rectInView.origin, size: CGSize(width: 1, height: cursorRect.height)))
+        
+        slashCommandController.show(
+            at: NSPoint(x: rectInWindow.origin.x, y: rectInWindow.origin.y),
+            in: window,
+            onSelect: { [weak self] command in
+                self?.handleSlashCommand(command)
+            },
+            onDismiss: { [weak self] in
+                self?.slashCommandRange = nil
+            }
+        )
+    }
+    
+    private func dismissSlashMenu() {
+        slashCommandController.dismiss()
+        slashCommandRange = nil
+    }
+    
+    private func handleSlashCommand(_ command: SlashCommand) {
+        guard let range = slashCommandRange else { return }
+        
+        // Delete the "/" character and insert the list prefix
+        let text = self.string as NSString
+        let lineRange = text.lineRange(for: range)
+        let lineStart = lineRange.location
+        
+        // Replace from line start to after "/" with the command prefix
+        let rangeToReplace = NSRange(location: lineStart, length: range.location + range.length - lineStart)
+        replaceCharacters(in: rangeToReplace, with: command.prefix)
+        
+        let newCursorPosition = lineStart + command.prefix.utf16.count
+        setSelectedRange(NSRange(location: newCursorPosition, length: 0))
+        
+        slashCommandRange = nil
+    }
 
     override func keyDown(with event: NSEvent) {
+        // Handle slash command menu navigation
+        if slashCommandController.isVisible {
+            switch event.keyCode {
+            case 126: // Up arrow
+                slashCommandController.moveUp()
+                return
+            case 125: // Down arrow
+                slashCommandController.moveDown()
+                return
+            case 36: // Enter
+                slashCommandController.selectCurrent()
+                return
+            case 53: // Escape
+                dismissSlashMenu()
+                return
+            default:
+                // Any other key dismisses menu
+                dismissSlashMenu()
+            }
+        }
+        
         guard !event.isARepeat else {
             super.keyDown(with: event)
             return
@@ -173,10 +252,17 @@ private class ThickCursorTextView: NSTextView {
             let currentLine = text.substring(with: lineRange)
             let trimmedLine = currentLine.trimmingCharacters(in: .whitespaces)
             
-            if trimmedLine.hasPrefix("• ") {
-                let bulletContent = trimmedLine.dropFirst("• ".count).trimmingCharacters(in: .whitespaces)
+            if trimmedLine.hasPrefix("•") {
+                // Get content after bullet (handle both "• " and "•")
+                var bulletContent: String
+                if trimmedLine.hasPrefix("• ") {
+                    bulletContent = String(trimmedLine.dropFirst("• ".count)).trimmingCharacters(in: .whitespaces)
+                } else {
+                    bulletContent = String(trimmedLine.dropFirst("•".count)).trimmingCharacters(in: .whitespaces)
+                }
                 
                 if bulletContent.isEmpty {
+                    // Remove the bullet line entirely
                     let linesBefore = text.substring(with: NSRange(location: 0, length: lineRange.location))
                     let linesAfter = text.substring(with: NSRange(location: lineRange.location + lineRange.length, length: text.length - (lineRange.location + lineRange.length)))
                     let newString = linesBefore + linesAfter
@@ -216,6 +302,32 @@ private class ThickCursorTextView: NSTextView {
         }
         
         super.keyDown(with: event)
+    }
+    
+    override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        super.insertText(insertString, replacementRange: replacementRange)
+        
+        // Check if "/" was typed at the beginning of a line
+        guard let str = insertString as? String, str == "/" else { return }
+        
+        let selectedRange = self.selectedRange()
+        let text = self.string as NSString
+        
+        // Check if "/" is at the start of a line (after newline or at position 0)
+        let slashPosition = selectedRange.location - 1
+        if slashPosition < 0 { return }
+        
+        let isAtLineStart: Bool
+        if slashPosition == 0 {
+            isAtLineStart = true
+        } else {
+            let prevChar = text.substring(with: NSRange(location: slashPosition - 1, length: 1))
+            isAtLineStart = prevChar == "\n"
+        }
+        
+        if isAtLineStart {
+            showSlashMenu()
+        }
     }
     
     override func layout() {
