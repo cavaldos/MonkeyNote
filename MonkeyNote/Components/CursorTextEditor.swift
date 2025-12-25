@@ -114,20 +114,23 @@ private class ThickCursorTextView: NSTextView {
             let selectedRange = self.selectedRange()
             let text = self.string as NSString
             
+            // Check if character BEFORE cursor is "-"
             if selectedRange.location > 0 {
                 let prevCharIndex = selectedRange.location - 1
                 if prevCharIndex < text.length {
                     let prevChar = text.substring(with: NSRange(location: prevCharIndex, length: 1))
                     if prevChar == "-" {
+                        // Get the rest of the line after the dash
                         let lineRange = text.lineRange(for: NSRange(location: prevCharIndex, length: 0))
-                        let currentLine = text.substring(with: lineRange)
-                        let trimmedLine = currentLine.trimmingCharacters(in: .whitespaces)
+                        let rangeAfterDash = NSRange(location: prevCharIndex + 1, length: lineRange.location + lineRange.length - prevCharIndex - 1)
+                        let remainingText = text.substring(with: rangeAfterDash)
                         
-                        if trimmedLine == "-" {
-                            self.replaceCharacters(in: NSRange(location: prevCharIndex, length: 1), with: "• ")
-                            self.setSelectedRange(NSRange(location: prevCharIndex + "• ".utf16.count, length: 0))
-                            return
-                        }
+                        // Replace the entire line from dash to end with bullet + remaining text
+                        let lineAfterDash = NSRange(location: prevCharIndex, length: lineRange.location + lineRange.length - prevCharIndex)
+                        let newText = "• " + remainingText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        self.replaceCharacters(in: lineAfterDash, with: newText)
+                        self.setSelectedRange(NSRange(location: prevCharIndex + newText.utf16.count, length: 0))
+                        return
                     }
                 }
             }
