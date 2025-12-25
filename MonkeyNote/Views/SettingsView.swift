@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage("note.fontFamily") private var fontFamily: String = "monospaced"
     @AppStorage("note.fontSize") private var fontSize: Double = 28
     @AppStorage("note.cursorWidth") private var cursorWidth: Double = 2
+    @AppStorage("note.cursorBlinkEnabled") private var cursorBlinkEnabled: Bool = true
     @AppStorage("note.cursorAnimationEnabled") private var cursorAnimationEnabled: Bool = true
     @AppStorage("note.cursorAnimationDuration") private var cursorAnimationDuration: Double = 0.15
 
@@ -86,6 +87,7 @@ struct SettingsView: View {
                 }
 
                 Section("Cursor") {
+                    Toggle("Cursor Blinking", isOn: $cursorBlinkEnabled)
                     Toggle("Cursor Animation", isOn: $cursorAnimationEnabled)
 
                     if cursorAnimationEnabled {

@@ -34,6 +34,7 @@ struct ContentView: View {
     @AppStorage("note.fontFamily") private var fontFamily: String = "monospaced"
     @AppStorage("note.fontSize") private var fontSize: Double = 28
     @AppStorage("note.cursorWidth") private var cursorWidth: Double = 2
+    @AppStorage("note.cursorBlinkEnabled") private var cursorBlinkEnabled: Bool = true
     @AppStorage("note.cursorAnimationEnabled") private var cursorAnimationEnabled: Bool = true
     @AppStorage("note.cursorAnimationDuration") private var cursorAnimationDuration: Double = 0.15
 
@@ -185,6 +186,7 @@ struct ContentView: View {
             text: selectedNoteTextBinding,
             isDarkMode: isDarkMode,
             cursorWidth: cursorWidth,
+            cursorBlinkEnabled: cursorBlinkEnabled,
             cursorAnimationEnabled: cursorAnimationEnabled,
             cursorAnimationDuration: cursorAnimationDuration,
             fontSize: fontSize,
@@ -426,6 +428,10 @@ struct ContentView: View {
                     editor
                         .padding(.top, 28)
                         .padding(.horizontal, 46)
+                        .background(
+                            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                                .fill(isDarkMode ? Color.black.opacity(0.16) : Color.black.opacity(0.04))
+                        )
 
                     Spacer(minLength: 0)
 

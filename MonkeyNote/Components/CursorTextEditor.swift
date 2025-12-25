@@ -15,6 +15,7 @@ private class ThickCursorLayoutManager: NSLayoutManager {
 
 private class ThickCursorTextView: NSTextView {
     var cursorWidth: CGFloat = 6
+    var cursorBlinkEnabled: Bool = true
     var cursorAnimationEnabled: Bool = true
     var cursorAnimationDuration: Double = 0.15
     var searchText: String = ""
@@ -23,7 +24,8 @@ private class ThickCursorTextView: NSTextView {
     private var highlightLayers: [CALayer] = []
 
     override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
-        guard flag else {
+        let shouldDraw = cursorBlinkEnabled ? flag : true
+        guard shouldDraw else {
             cursorLayer?.opacity = 0
             return
         }
@@ -66,6 +68,12 @@ private class ThickCursorTextView: NSTextView {
         var extendedRect = invalidRect
         extendedRect.size.width += cursorWidth
         super.setNeedsDisplay(extendedRect, avoidAdditionalLayout: flag)
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let didResign = super.resignFirstResponder()
+        cursorLayer?.opacity = 0
+        return didResign
     }
 
     override var rangeForUserCompletion: NSRange {
@@ -220,6 +228,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     @Binding var text: String
     var isDarkMode: Bool
     var cursorWidth: CGFloat
+    var cursorBlinkEnabled: Bool
     var cursorAnimationEnabled: Bool
     var cursorAnimationDuration: Double
     var fontSize: Double
@@ -251,6 +260,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
 
         let textView = ThickCursorTextView(frame: .zero, textContainer: textContainer)
         textView.cursorWidth = cursorWidth
+        textView.cursorBlinkEnabled = cursorBlinkEnabled
         textView.cursorAnimationEnabled = cursorAnimationEnabled
         textView.cursorAnimationDuration = cursorAnimationDuration
         textView.searchText = searchText
@@ -313,6 +323,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         }
 
         textView.cursorWidth = cursorWidth
+        textView.cursorBlinkEnabled = cursorBlinkEnabled
         textView.cursorAnimationEnabled = cursorAnimationEnabled
         textView.cursorAnimationDuration = cursorAnimationDuration
         textView.searchText = searchText
