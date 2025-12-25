@@ -911,16 +911,16 @@ private class ThickCursorTextView: NSTextView {
             
             if currentLine.hasPrefix("### ") {
                 // Remove heading
-                replaceCharacters(in: NSRange(location: lineStart, length: 4), with: "")
+                performUndoableReplacement(in: NSRange(location: lineStart, length: 4), with: "")
             } else if currentLine.hasPrefix("## ") {
                 // H2 -> H3
-                replaceCharacters(in: NSRange(location: lineStart, length: 3), with: "### ")
+                performUndoableReplacement(in: NSRange(location: lineStart, length: 3), with: "### ")
             } else if currentLine.hasPrefix("# ") {
                 // H1 -> H2
-                replaceCharacters(in: NSRange(location: lineStart, length: 2), with: "## ")
+                performUndoableReplacement(in: NSRange(location: lineStart, length: 2), with: "## ")
             } else {
                 // Add H1
-                replaceCharacters(in: NSRange(location: lineStart, length: 0), with: "# ")
+                performUndoableReplacement(in: NSRange(location: lineStart, length: 0), with: "# ")
             }
             return
         case .list:
@@ -931,10 +931,10 @@ private class ThickCursorTextView: NSTextView {
             
             if currentLine.hasPrefix("• ") || currentLine.hasPrefix("- ") {
                 // Remove bullet
-                replaceCharacters(in: NSRange(location: lineStart, length: 2), with: "")
+                performUndoableReplacement(in: NSRange(location: lineStart, length: 2), with: "")
             } else {
                 // Add bullet
-                replaceCharacters(in: NSRange(location: lineStart, length: 0), with: "• ")
+                performUndoableReplacement(in: NSRange(location: lineStart, length: 0), with: "• ")
             }
             return
         case .alignLeft:
@@ -946,12 +946,33 @@ private class ThickCursorTextView: NSTextView {
             return
         }
         
-        // Replace selected text with formatted text
-        replaceCharacters(in: range, with: newText)
+        // Replace selected text with formatted text (with undo support)
+        performUndoableReplacement(in: range, with: newText)
         
         // Update cursor position
         let newCursorPosition = range.location + newText.utf16.count
         setSelectedRange(NSRange(location: newCursorPosition, length: 0))
+    }
+    
+    /// Performs a text replacement with proper undo support that doesn't restore selection state
+    private func performUndoableReplacement(in range: NSRange, with newText: String) {
+        let text = self.string as NSString
+        let oldText = text.substring(with: range)
+        
+        // Register undo action
+        undoManager?.registerUndo(withTarget: self) { [weak self] _ in
+            guard let self = self else { return }
+            let newRange = NSRange(location: range.location, length: newText.utf16.count)
+            self.performUndoableReplacement(in: newRange, with: oldText)
+            // Place cursor at end of restored text (no selection)
+            self.setSelectedRange(NSRange(location: range.location + oldText.utf16.count, length: 0))
+        }
+        
+        // Perform the replacement
+        replaceCharacters(in: range, with: newText)
+        
+        // Notify text did change
+        didChangeText()
     }
     
     // MARK: - Link Handling
