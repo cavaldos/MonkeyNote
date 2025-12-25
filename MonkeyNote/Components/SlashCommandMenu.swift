@@ -29,23 +29,106 @@ enum SlashCommand: String, CaseIterable {
     }
 }
 
+// Custom clickable item view
+class SlashCommandItemView: NSControl {
+    private var textField: NSTextField!
+    private var backgroundLayer: CALayer!
+    private var command: SlashCommand?
+    private var isItemSelected: Bool = false
+    
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupView()
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupView()
+    }
+    
+    private func setupView() {
+        wantsLayer = true
+        
+        backgroundLayer = CALayer()
+        backgroundLayer.cornerRadius = 4
+        backgroundLayer.backgroundColor = NSColor.clear.cgColor
+        layer?.addSublayer(backgroundLayer)
+        
+        textField = NSTextField(labelWithString: "")
+        textField.font = .systemFont(ofSize: 13)
+        textField.textColor = .white
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(textField)
+        
+        NSLayoutConstraint.activate([
+            textField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            textField.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+    }
+    
+    override func layout() {
+        super.layout()
+        backgroundLayer.frame = bounds.insetBy(dx: 5, dy: 0)
+    }
+    
+    func configure(with command: SlashCommand, isSelected: Bool) {
+        self.command = command
+        textField.stringValue = command.rawValue
+        setSelected(isSelected)
+    }
+    
+    func setSelected(_ selected: Bool) {
+        isItemSelected = selected
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        backgroundLayer.backgroundColor = selected ? NSColor.white.withAlphaComponent(0.1).cgColor : NSColor.clear.cgColor
+        CATransaction.commit()
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        sendAction(action, to: target)
+    }
+    
+    override func mouseEntered(with event: NSEvent) {
+        setSelected(true)
+    }
+    
+    override func mouseExited(with event: NSEvent) {
+        // Will be updated by controller
+    }
+    
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for trackingArea in trackingAreas {
+            removeTrackingArea(trackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+    }
+}
+
 class SlashCommandWindowController: NSObject {
     private var window: NSWindow?
-    private var tableView: NSTableView?
     private var selectedIndex: Int = 0
     private var onSelect: ((SlashCommand) -> Void)?
     private var onDismiss: (() -> Void)?
+    private var itemViews: [SlashCommandItemView] = []
     
     func show(at point: NSPoint, in parentWindow: NSWindow?, onSelect: @escaping (SlashCommand) -> Void, onDismiss: @escaping () -> Void) {
         self.onSelect = onSelect
         self.onDismiss = onDismiss
         self.selectedIndex = 0
         
-        let horizontalPadding: CGFloat = 12
-        let verticalPadding: CGFloat = 8
-        let menuWidth: CGFloat = 220
-        let rowHeight: CGFloat = 36
-        let menuHeight: CGFloat = CGFloat(SlashCommand.allCases.count) * rowHeight + (verticalPadding * 2)
+        let menuWidth: CGFloat = 180
+        let rowHeight: CGFloat = 22
+        let verticalPadding: CGFloat = 5
+        let itemCount = SlashCommand.allCases.count
+        let menuHeight: CGFloat = CGFloat(itemCount) * rowHeight + (verticalPadding * 2)
         
         let panel = NSPanel(
             contentRect: NSRect(x: point.x, y: point.y - menuHeight, width: menuWidth, height: menuHeight),
@@ -58,45 +141,45 @@ class SlashCommandWindowController: NSObject {
         panel.hasShadow = true
         panel.level = .floating
         
-        let visualEffect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: menuHeight))
-        visualEffect.material = .menu
-        visualEffect.state = .active
-        visualEffect.wantsLayer = true
-        visualEffect.layer?.cornerRadius = 7
-        visualEffect.layer?.masksToBounds = true
+        // Background view with dark color
+        let backgroundView = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: menuHeight))
+        backgroundView.wantsLayer = true
+        backgroundView.layer?.cornerRadius = 6
+        backgroundView.layer?.masksToBounds = true
+        backgroundView.layer?.backgroundColor = NSColor(red: 49/255, green: 49/255, blue: 49/255, alpha: 0.98).cgColor
+        backgroundView.layer?.borderWidth = 0.5
+        backgroundView.layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
         
-        let scrollView = NSScrollView(frame: NSRect(x: horizontalPadding, y: verticalPadding, width: menuWidth - (horizontalPadding * 2), height: menuHeight - (verticalPadding * 2)))
-        scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = false
-        scrollView.hasHorizontalScroller = false
+        // Create item views
+        itemViews = []
+        let commands = SlashCommand.allCases
+        for (index, command) in commands.enumerated() {
+            let yPosition = menuHeight - verticalPadding - CGFloat(index + 1) * rowHeight
+            let itemView = SlashCommandItemView(frame: NSRect(x: 0, y: yPosition, width: menuWidth, height: rowHeight))
+            itemView.configure(with: command, isSelected: index == 0)
+            itemView.tag = index
+            itemView.target = self
+            itemView.action = #selector(itemClicked(_:))
+            backgroundView.addSubview(itemView)
+            itemViews.append(itemView)
+        }
         
-        let tableView = NSTableView(frame: scrollView.bounds)
-        tableView.backgroundColor = .clear
-        tableView.headerView = nil
-        tableView.rowHeight = rowHeight
-        tableView.selectionHighlightStyle = .regular
-        tableView.intercellSpacing = NSSize(width: 0, height: 4)
-        tableView.delegate = self
-        tableView.dataSource = self
-        tableView.target = self
-        tableView.doubleAction = #selector(handleDoubleClick)
-        
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("command"))
-        column.width = menuWidth - (horizontalPadding * 2)
-        tableView.addTableColumn(column)
-        
-        scrollView.documentView = tableView
-        visualEffect.addSubview(scrollView)
-        panel.contentView = visualEffect
-        
+        panel.contentView = backgroundView
         self.window = panel
-        self.tableView = tableView
         
         parentWindow?.addChildWindow(panel, ordered: .above)
         panel.makeKeyAndOrderFront(nil)
-        
-        tableView.reloadData()
-        tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+    }
+    
+    private func updateSelection() {
+        for (index, itemView) in itemViews.enumerated() {
+            itemView.setSelected(index == selectedIndex)
+        }
+    }
+    
+    @objc private func itemClicked(_ sender: SlashCommandItemView) {
+        selectedIndex = sender.tag
+        selectCurrent()
     }
     
     func dismiss() {
@@ -105,22 +188,18 @@ class SlashCommandWindowController: NSObject {
             window.orderOut(nil)
         }
         self.window = nil
-        self.tableView = nil
+        self.itemViews = []
         onDismiss?()
     }
     
     func moveUp() {
-        guard let tableView = tableView else { return }
         selectedIndex = max(0, selectedIndex - 1)
-        tableView.selectRowIndexes(IndexSet(integer: selectedIndex), byExtendingSelection: false)
-        tableView.scrollRowToVisible(selectedIndex)
+        updateSelection()
     }
     
     func moveDown() {
-        guard let tableView = tableView else { return }
         selectedIndex = min(SlashCommand.allCases.count - 1, selectedIndex + 1)
-        tableView.selectRowIndexes(IndexSet(integer: selectedIndex), byExtendingSelection: false)
-        tableView.scrollRowToVisible(selectedIndex)
+        updateSelection()
     }
     
     func selectCurrent() {
@@ -129,50 +208,8 @@ class SlashCommandWindowController: NSObject {
         dismiss()
     }
     
-    @objc private func handleDoubleClick() {
-        guard let tableView = tableView, tableView.clickedRow >= 0 else { return }
-        selectedIndex = tableView.clickedRow
-        selectCurrent()
-    }
-    
     var isVisible: Bool {
         window != nil
-    }
-}
-
-extension SlashCommandWindowController: NSTableViewDataSource, NSTableViewDelegate {
-    func numberOfRows(in tableView: NSTableView) -> Int {
-        SlashCommand.allCases.count
-    }
-    
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let command = SlashCommand.allCases[row]
-        
-        let cellView = NSTableCellView()
-        cellView.wantsLayer = true
-        
-        let imageView = NSImageView(frame: NSRect(x: 8, y: 8, width: 20, height: 20))
-        imageView.image = NSImage(systemSymbolName: command.icon, accessibilityDescription: nil)
-        imageView.contentTintColor = .labelColor
-        
-        let textField = NSTextField(labelWithString: command.rawValue)
-        textField.frame = NSRect(x: 36, y: 8, width: 150, height: 20)
-        textField.font = .systemFont(ofSize: 13)
-        textField.textColor = .labelColor
-        
-        cellView.addSubview(imageView)
-        cellView.addSubview(textField)
-        
-        return cellView
-    }
-    
-    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
-        true
-    }
-    
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        guard let tableView = notification.object as? NSTableView else { return }
-        selectedIndex = tableView.selectedRow
     }
 }
 #endif
