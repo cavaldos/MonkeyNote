@@ -32,6 +32,7 @@ enum SlashCommand: String, CaseIterable {
 // Custom clickable item view
 class SlashCommandItemView: NSControl {
     private var textField: NSTextField!
+    private var iconView: NSImageView!
     private var backgroundLayer: CALayer!
     private var command: SlashCommand?
     private var isItemSelected: Bool = false
@@ -54,6 +55,13 @@ class SlashCommandItemView: NSControl {
         backgroundLayer.backgroundColor = NSColor.clear.cgColor
         layer?.addSublayer(backgroundLayer)
         
+        // Icon
+        iconView = NSImageView()
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.contentTintColor = .white.withAlphaComponent(0.85)
+        addSubview(iconView)
+        
+        // Text
         textField = NSTextField(labelWithString: "")
         textField.font = .systemFont(ofSize: 13)
         textField.textColor = .white
@@ -61,7 +69,12 @@ class SlashCommandItemView: NSControl {
         addSubview(textField)
         
         NSLayoutConstraint.activate([
-            textField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 16),
+            iconView.heightAnchor.constraint(equalToConstant: 16),
+            
+            textField.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
             textField.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
     }
@@ -74,6 +87,7 @@ class SlashCommandItemView: NSControl {
     func configure(with command: SlashCommand, isSelected: Bool) {
         self.command = command
         textField.stringValue = command.rawValue
+        iconView.image = NSImage(systemSymbolName: command.icon, accessibilityDescription: nil)
         setSelected(isSelected)
     }
     
@@ -124,8 +138,8 @@ class SlashCommandWindowController: NSObject {
         self.onDismiss = onDismiss
         self.selectedIndex = 0
         
-        let menuWidth: CGFloat = 180
-        let rowHeight: CGFloat = 22
+        let menuWidth: CGFloat = 200
+        let rowHeight: CGFloat = 26
         let verticalPadding: CGFloat = 5
         let itemCount = SlashCommand.allCases.count
         let menuHeight: CGFloat = CGFloat(itemCount) * rowHeight + (verticalPadding * 2)
