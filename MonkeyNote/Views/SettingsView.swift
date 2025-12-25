@@ -30,6 +30,8 @@ struct SettingsView: View {
     @AppStorage("note.autocompleteEnabled") private var autocompleteEnabled: Bool = true
     @AppStorage("note.autocompleteDelay") private var autocompleteDelay: Double = 0.05
     @AppStorage("note.autocompleteOpacity") private var autocompleteOpacity: Double = 0.5
+    @AppStorage("note.useBuiltInDictionary") private var useBuiltInDictionary: Bool = true
+    @AppStorage("note.minWordLength") private var minWordLength: Int = 4
 
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var vaultManager: VaultManager
@@ -198,15 +200,94 @@ struct SettingsView: View {
             settingsSection("Word Suggestions") {
                 VStack(alignment: .leading, spacing: 16) {
                     Toggle("Enable Autocomplete", isOn: $autocompleteEnabled)
-                    
-                    Text("When enabled, word suggestions will appear as ghost text while you type. Press Tab to accept the suggestion.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             
             if autocompleteEnabled {
+                settingsSection("Word Filter") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Minimum Word Length: \(minWordLength) characters")
+                            .font(.subheadline)
+                        Slider(value: Binding(
+                            get: { Double(minWordLength) },
+                            set: { minWordLength = Int($0) }
+                        ), in: 2...8, step: 1)
+                            .frame(maxWidth: 250)
+                        Text("Words shorter than this will not be suggested (e.g., 'a', 'the', 'is')")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .onChange(of: minWordLength) { _, newValue in
+                        WordSuggestionManager.shared.setMinWordLength(newValue)
+                    }
+                }
+                
+                settingsSection("Custom Word Dictionary") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let folderURL = WordSuggestionManager.shared.getCustomFolderURL() {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Image(systemName: "folder.fill")
+                                        .foregroundStyle(.blue)
+                                    Text(folderURL.lastPathComponent)
+                                        .font(.system(.body, design: .monospaced))
+                                }
+                                
+                                Text(folderURL.path)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                
+                                HStack {
+                                    Text("\(WordSuggestionManager.shared.customWordCount) words loaded")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    
+                                    Spacer()
+                                    
+                                    Button("Reload") {
+                                        WordSuggestionManager.shared.reloadCustomWords()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                }
+                            }
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(nsColor: .controlBackgroundColor))
+                            )
+                            
+                            HStack {
+                                Button("Change Folder") {
+                                    selectCustomWordFolder()
+                                }
+                                .buttonStyle(.bordered)
+                                
+                                Button("Remove") {
+                                    WordSuggestionManager.shared.setCustomFolder(nil)
+                                }
+                                .buttonStyle(.bordered)
+                                .foregroundColor(.red)
+                            }
+                        } else {
+                            Text("Add a folder containing .txt files to expand your word suggestions.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            
+                            Button("Select Folder") {
+                                selectCustomWordFolder()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        
+                        Toggle("Use built-in dictionary (\(WordSuggestionManager.shared.bundledWordCount) words)", isOn: $useBuiltInDictionary)
+                            .onChange(of: useBuiltInDictionary) { _, newValue in
+                                WordSuggestionManager.shared.setUseBuiltIn(newValue)
+                            }
+                    }
+                }
+                
                 settingsSection("Timing") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Suggestion Delay: \(Int(autocompleteDelay * 1000))ms")
@@ -214,9 +295,6 @@ struct SettingsView: View {
                         Slider(value: $autocompleteDelay, in: 0...0.5, step: 0.05)
                             .frame(maxWidth: 250)
                         Text("How long to wait before showing suggestions")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text("Recommended: 50ms")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -292,6 +370,21 @@ struct SettingsView: View {
         
         if panel.runModal() == .OK, let url = panel.url {
             vaultManager.setVault(url: url)
+        }
+    }
+    
+    private func selectCustomWordFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.title = "Select Word Dictionary Folder"
+        panel.prompt = "Select"
+        panel.message = "Choose a folder containing .txt files with words for autocomplete"
+        
+        if panel.runModal() == .OK, let url = panel.url {
+            WordSuggestionManager.shared.setCustomFolder(url)
         }
     }
 }

@@ -12,39 +12,143 @@ import AppKit
 // MARK: - Word Suggestion Manager
 class WordSuggestionManager {
     static let shared = WordSuggestionManager()
-    private var words: [String] = []
+    private var bundledWords: [String] = []
+    private var customWords: [String] = []
+    private var customFolderURL: URL?
+    private var useBuiltIn: Bool = true
+    private var minWordLength: Int = 4
     
     private init() {
-        loadWords()
+        loadBundledWords()
+        loadCustomWordsFromUserDefaults()
+        useBuiltIn = UserDefaults.standard.object(forKey: "note.useBuiltInDictionary") as? Bool ?? true
+        minWordLength = UserDefaults.standard.object(forKey: "note.minWordLength") as? Int ?? 4
     }
     
-    private func loadWords() {
+    private func loadBundledWords() {
         // Load from bundled word.txt file
         if let path = Bundle.main.path(forResource: "word", ofType: "txt"),
            let content = try? String(contentsOfFile: path, encoding: .utf8) {
-            parseWords(from: content)
+            bundledWords = parseWords(from: content)
         }
     }
     
-    private func parseWords(from content: String) {
-        // Parse words separated by commas and newlines
-        words = content
-            .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+    private func loadCustomWordsFromUserDefaults() {
+        // Load custom folder path from UserDefaults
+        if let bookmarkData = UserDefaults.standard.data(forKey: "note.customWordFolderBookmark") {
+            do {
+                var isStale = false
+                let url = try URL(resolvingBookmarkData: bookmarkData, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale)
+                if url.startAccessingSecurityScopedResource() {
+                    customFolderURL = url
+                    loadCustomWords(from: url)
+                }
+            } catch {
+                print("Failed to resolve bookmark: \(error)")
+            }
+        }
+    }
+    
+    func setUseBuiltIn(_ value: Bool) {
+        useBuiltIn = value
+    }
+    
+    func setMinWordLength(_ value: Int) {
+        minWordLength = value
+    }
+    
+    func setCustomFolder(_ url: URL?) {
+        // Stop accessing previous folder
+        customFolderURL?.stopAccessingSecurityScopedResource()
+        
+        if let url = url {
+            // Save bookmark for security-scoped access
+            do {
+                let bookmarkData = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+                UserDefaults.standard.set(bookmarkData, forKey: "note.customWordFolderBookmark")
+                customFolderURL = url
+                loadCustomWords(from: url)
+            } catch {
+                print("Failed to create bookmark: \(error)")
+            }
+        } else {
+            UserDefaults.standard.removeObject(forKey: "note.customWordFolderBookmark")
+            customFolderURL = nil
+            customWords = []
+        }
+    }
+    
+    func getCustomFolderURL() -> URL? {
+        return customFolderURL
+    }
+    
+    private func loadCustomWords(from folderURL: URL) {
+        customWords = []
+        
+        let fileManager = FileManager.default
+        guard let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else {
+            return
+        }
+        
+        for case let fileURL as URL in enumerator {
+            if fileURL.pathExtension.lowercased() == "txt" {
+                if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
+                    let words = parseWords(from: content)
+                    customWords.append(contentsOf: words)
+                }
+            }
+        }
+        
+        // Remove duplicates
+        customWords = Array(Set(customWords))
+    }
+    
+    func reloadCustomWords() {
+        if let url = customFolderURL {
+            loadCustomWords(from: url)
+        }
+    }
+    
+    private func parseWords(from content: String) -> [String] {
+        // Parse words separated by commas, newlines, and spaces
+        return content
+            .components(separatedBy: CharacterSet(charactersIn: ",\n "))
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+            .filter { !$0.isEmpty && $0.count >= 2 }
+    }
+    
+    private var allWords: [String] {
+        var words: [String] = []
+        if useBuiltIn {
+            words.append(contentsOf: bundledWords)
+        }
+        words.append(contentsOf: customWords)
+        return words
     }
     
     func getSuggestion(for prefix: String) -> String? {
         guard !prefix.isEmpty else { return nil }
         let lowercasedPrefix = prefix.lowercased()
         
-        // Find first word that starts with the prefix
-        if let match = words.first(where: { $0.lowercased().hasPrefix(lowercasedPrefix) && $0.lowercased() != lowercasedPrefix }) {
+        // Find first word that starts with the prefix and meets minimum length
+        if let match = allWords.first(where: { 
+            $0.lowercased().hasPrefix(lowercasedPrefix) && 
+            $0.lowercased() != lowercasedPrefix &&
+            $0.count >= minWordLength  // Filter by minimum word length
+        }) {
             // Return only the completion part (without the prefix)
             let completionStartIndex = match.index(match.startIndex, offsetBy: prefix.count)
             return String(match[completionStartIndex...])
         }
         return nil
+    }
+    
+    var customWordCount: Int {
+        return customWords.count
+    }
+    
+    var bundledWordCount: Int {
+        return bundledWords.count
     }
 }
 
