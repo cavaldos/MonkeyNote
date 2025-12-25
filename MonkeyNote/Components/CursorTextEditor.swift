@@ -643,6 +643,11 @@ private class ThickCursorTextView: NSTextView {
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
         super.insertText(insertString, replacementRange: replacementRange)
         
+        // Update cursor position in MarkdownTextStorage
+        if let textStorage = self.textStorage as? MarkdownTextStorage {
+            textStorage.cursorPosition = self.selectedRange().location
+        }
+        
         // Update autocomplete suggestion
         if let str = insertString as? String {
             // Hide suggestion if space or punctuation is typed
@@ -678,6 +683,12 @@ private class ThickCursorTextView: NSTextView {
     
     override func deleteBackward(_ sender: Any?) {
         super.deleteBackward(sender)
+        
+        // Update cursor position in MarkdownTextStorage
+        if let textStorage = self.textStorage as? MarkdownTextStorage {
+            textStorage.cursorPosition = self.selectedRange().location
+        }
+        
         // Update suggestion after deletion
         updateSuggestion()
     }
@@ -696,6 +707,11 @@ private class ThickCursorTextView: NSTextView {
     
     private func handleSelectionChange() {
         let selectedRange = self.selectedRange()
+        
+        // Update cursor position in MarkdownTextStorage for syntax visibility
+        if let textStorage = self.textStorage as? MarkdownTextStorage {
+            textStorage.cursorPosition = selectedRange.location
+        }
         
         // Only show toolbar when there's a selection (not just cursor)
         if selectedRange.length > 0 {
@@ -846,7 +862,8 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         let layoutManager = ThickCursorLayoutManager()
         layoutManager.cursorWidth = cursorWidth
 
-        let textStorage = NSTextStorage()
+        // Use MarkdownTextStorage for live markdown rendering
+        let textStorage = MarkdownTextStorage()
         textStorage.addLayoutManager(layoutManager)
 
         let textContainer = NSTextContainer()
@@ -864,7 +881,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.autocompleteDelay = autocompleteDelay
         textView.autocompleteOpacity = autocompleteOpacity
         textView.suggestionMode = suggestionMode
-        textView.isRichText = false
+        textView.isRichText = true  // Enable rich text for markdown styling
         textView.allowsUndo = true
         textView.isEditable = true
         textView.isSelectable = true
@@ -892,6 +909,13 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             }
         }
         textView.font = font
+        
+        // Configure MarkdownTextStorage with base font and color
+        textStorage.baseFont = font
+        textStorage.baseTextColor = isDarkMode
+            ? NSColor.white.withAlphaComponent(0.92)
+            : NSColor.black.withAlphaComponent(0.92)
+        
         textView.textColor = isDarkMode
             ? NSColor.white.withAlphaComponent(0.92)
             : NSColor.black.withAlphaComponent(0.92)
@@ -904,6 +928,9 @@ struct ThickCursorTextEditor: NSViewRepresentable {
 
         textView.delegate = context.coordinator
         textView.string = text
+        
+        // Trigger initial markdown processing
+        textStorage.reprocessMarkdown()
 
         scrollView.documentView = textView
         context.coordinator.textView = textView
@@ -920,6 +947,11 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             let safeLocation = min(selectedRange.location, text.utf16.count)
             let safeLength = min(selectedRange.length, text.utf16.count - safeLocation)
             textView.setSelectedRange(NSRange(location: safeLocation, length: safeLength))
+            
+            // Reprocess markdown when text changes externally
+            if let textStorage = textView.textStorage as? MarkdownTextStorage {
+                textStorage.reprocessMarkdown()
+            }
         }
 
         textView.cursorWidth = cursorWidth
@@ -949,16 +981,28 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             }
         }
         textView.font = font
-
-        textView.textColor = isDarkMode
+        
+        let textColor = isDarkMode
             ? NSColor.white.withAlphaComponent(0.92)
             : NSColor.black.withAlphaComponent(0.92)
+
+        textView.textColor = textColor
         textView.insertionPointColor = NSColor(
             red: 222.0 / 255.0,
             green: 99.0 / 255.0,
             blue: 74.0 / 255.0,
             alpha: 1.0
         )
+        
+        // Update MarkdownTextStorage settings
+        if let textStorage = textView.textStorage as? MarkdownTextStorage {
+            let needsReprocess = textStorage.baseFont != font || textStorage.baseTextColor != textColor
+            textStorage.baseFont = font
+            textStorage.baseTextColor = textColor
+            if needsReprocess {
+                textStorage.reprocessMarkdown()
+            }
+        }
 
         textView.updateHighlights()
     }
@@ -974,6 +1018,11 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
+            
+            // Update cursor position in MarkdownTextStorage
+            if let textStorage = textView.textStorage as? MarkdownTextStorage {
+                textStorage.cursorPosition = textView.selectedRange().location
+            }
             
             // Auto-scroll to cursor position with smooth animation
             guard let scrollView = textView.enclosingScrollView,
@@ -1009,6 +1058,15 @@ struct ThickCursorTextEditor: NSViewRepresentable {
                     context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                     scrollView.contentView.animator().setBoundsOrigin(targetPoint)
                 }
+            }
+        }
+        
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            
+            // Update cursor position in MarkdownTextStorage for syntax visibility
+            if let textStorage = textView.textStorage as? MarkdownTextStorage {
+                textStorage.cursorPosition = textView.selectedRange().location
             }
         }
     }
