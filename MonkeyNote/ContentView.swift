@@ -37,6 +37,9 @@ struct ContentView: View {
     @AppStorage("note.cursorBlinkEnabled") private var cursorBlinkEnabled: Bool = true
     @AppStorage("note.cursorAnimationEnabled") private var cursorAnimationEnabled: Bool = true
     @AppStorage("note.cursorAnimationDuration") private var cursorAnimationDuration: Double = 0.15
+    @AppStorage("note.autocompleteEnabled") private var autocompleteEnabled: Bool = true
+    @AppStorage("note.autocompleteDelay") private var autocompleteDelay: Double = 0.0
+    @AppStorage("note.autocompleteOpacity") private var autocompleteOpacity: Double = 0.5
 
     private var selectedFolderPath: [Int]? {
         guard let selectedFolderID = selectedFolderID else { return nil }
@@ -191,7 +194,10 @@ struct ContentView: View {
             cursorAnimationDuration: cursorAnimationDuration,
             fontSize: fontSize,
             fontFamily: fontFamily,
-            searchText: searchText
+            searchText: searchText,
+            autocompleteEnabled: autocompleteEnabled,
+            autocompleteDelay: autocompleteDelay,
+            autocompleteOpacity: autocompleteOpacity
         )
         .overlay(alignment: .topLeading) {
             if selectedNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

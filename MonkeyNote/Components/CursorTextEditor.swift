@@ -9,6 +9,45 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Word Suggestion Manager
+class WordSuggestionManager {
+    static let shared = WordSuggestionManager()
+    private var words: [String] = []
+    
+    private init() {
+        loadWords()
+    }
+    
+    private func loadWords() {
+        // Load from bundled word.txt file
+        if let path = Bundle.main.path(forResource: "word", ofType: "txt"),
+           let content = try? String(contentsOfFile: path, encoding: .utf8) {
+            parseWords(from: content)
+        }
+    }
+    
+    private func parseWords(from content: String) {
+        // Parse words separated by commas and newlines
+        words = content
+            .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+    
+    func getSuggestion(for prefix: String) -> String? {
+        guard !prefix.isEmpty else { return nil }
+        let lowercasedPrefix = prefix.lowercased()
+        
+        // Find first word that starts with the prefix
+        if let match = words.first(where: { $0.lowercased().hasPrefix(lowercasedPrefix) && $0.lowercased() != lowercasedPrefix }) {
+            // Return only the completion part (without the prefix)
+            let completionStartIndex = match.index(match.startIndex, offsetBy: prefix.count)
+            return String(match[completionStartIndex...])
+        }
+        return nil
+    }
+}
+
 private class ThickCursorLayoutManager: NSLayoutManager {
     var cursorWidth: CGFloat = 6
 }
@@ -19,6 +58,9 @@ private class ThickCursorTextView: NSTextView {
     var cursorAnimationEnabled: Bool = true
     var cursorAnimationDuration: Double = 0.15
     var searchText: String = ""
+    var autocompleteEnabled: Bool = true
+    var autocompleteDelay: Double = 0.0
+    var autocompleteOpacity: Double = 0.5
     private var cursorLayer: CALayer?
     private var lastCursorRect: NSRect = .zero
     private var highlightLayers: [CALayer] = []
@@ -26,6 +68,12 @@ private class ThickCursorTextView: NSTextView {
     // Slash command menu
     private var slashCommandController = SlashCommandWindowController()
     private var slashCommandRange: NSRange?
+    
+    // Autocomplete ghost text
+    private var ghostTextLayer: CATextLayer?
+    private var currentSuggestion: String?
+    private var suggestionWordStart: Int = 0
+    private var suggestionTask: Task<Void, Never>?
 
     override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
         let shouldDraw = cursorBlinkEnabled ? flag : true
@@ -116,6 +164,143 @@ private class ThickCursorTextView: NSTextView {
         }
     }
     
+    // MARK: - Autocomplete Ghost Text
+    private func updateSuggestion() {
+        // Check if autocomplete is enabled
+        guard autocompleteEnabled else {
+            hideSuggestion()
+            return
+        }
+        
+        // Cancel any pending suggestion task
+        suggestionTask?.cancel()
+        
+        // If delay is 0, show immediately
+        if autocompleteDelay <= 0 {
+            performSuggestionUpdate()
+        } else {
+            // Debounce with delay
+            suggestionTask = Task {
+                try? await Task.sleep(nanoseconds: UInt64(autocompleteDelay * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    performSuggestionUpdate()
+                }
+            }
+        }
+    }
+    
+    private func performSuggestionUpdate() {
+        let selectedRange = self.selectedRange()
+        let text = self.string as NSString
+        
+        // Only suggest when cursor is at the end of a word (no selection)
+        guard selectedRange.length == 0 else {
+            hideSuggestion()
+            return
+        }
+        
+        // Get current word being typed
+        let cursorPosition = selectedRange.location
+        guard cursorPosition > 0 else {
+            hideSuggestion()
+            return
+        }
+        
+        // Find word start
+        var wordStart = cursorPosition
+        while wordStart > 0 {
+            let charIndex = wordStart - 1
+            let char = text.substring(with: NSRange(location: charIndex, length: 1))
+            if char.rangeOfCharacter(from: CharacterSet.alphanumerics) == nil {
+                break
+            }
+            wordStart -= 1
+        }
+        
+        // Get the current word prefix
+        let wordLength = cursorPosition - wordStart
+        guard wordLength >= 2 else { // Only suggest after 2+ characters
+            hideSuggestion()
+            return
+        }
+        
+        let currentWord = text.substring(with: NSRange(location: wordStart, length: wordLength))
+        
+        // Get suggestion
+        if let suggestion = WordSuggestionManager.shared.getSuggestion(for: currentWord) {
+            currentSuggestion = suggestion
+            suggestionWordStart = wordStart
+            showGhostText(suggestion, at: cursorPosition)
+        } else {
+            hideSuggestion()
+        }
+    }
+    
+    private func showGhostText(_ text: String, at position: Int) {
+        guard let layoutManager = layoutManager,
+              let textContainer = textContainer else { return }
+        
+        // Get cursor position rect
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: NSRange(location: position, length: 0), actualCharacterRange: nil)
+        var cursorRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        cursorRect.origin.x += textContainerInset.width
+        cursorRect.origin.y += textContainerInset.height
+        
+        // Create or update ghost text layer
+        if ghostTextLayer == nil {
+            let layer = CATextLayer()
+            layer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
+            layer.alignmentMode = .left
+            wantsLayer = true
+            self.layer?.addSublayer(layer)
+            ghostTextLayer = layer
+        }
+        
+        // Configure the ghost text with opacity from settings
+        let font = self.font ?? NSFont.systemFont(ofSize: 14)
+        ghostTextLayer?.font = font
+        ghostTextLayer?.fontSize = font.pointSize
+        ghostTextLayer?.foregroundColor = NSColor.gray.withAlphaComponent(autocompleteOpacity).cgColor
+        ghostTextLayer?.string = text
+        
+        // Calculate size for the ghost text
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        let textSize = (text as NSString).size(withAttributes: attributes)
+        
+        // Position ghost text right after cursor
+        ghostTextLayer?.frame = NSRect(
+            x: cursorRect.origin.x + cursorWidth,
+            y: cursorRect.origin.y,
+            width: textSize.width + 10,
+            height: cursorRect.height
+        )
+        ghostTextLayer?.isHidden = false
+    }
+    
+    private func hideSuggestion() {
+        suggestionTask?.cancel()
+        ghostTextLayer?.isHidden = true
+        currentSuggestion = nil
+    }
+    
+    func acceptSuggestion() -> Bool {
+        guard let suggestion = currentSuggestion, !suggestion.isEmpty else {
+            return false
+        }
+        
+        // Insert the suggestion at cursor position
+        let selectedRange = self.selectedRange()
+        replaceCharacters(in: selectedRange, with: suggestion)
+        
+        // Move cursor to end of inserted text
+        let newPosition = selectedRange.location + suggestion.utf16.count
+        setSelectedRange(NSRange(location: newPosition, length: 0))
+        
+        hideSuggestion()
+        return true
+    }
+    
     // MARK: - Slash Command Menu
     private func showSlashMenu() {
         guard let layoutManager = layoutManager,
@@ -192,12 +377,26 @@ private class ThickCursorTextView: NSTextView {
             }
         }
         
+        // Handle Escape to dismiss autocomplete suggestion
+        if event.keyCode == 53 { // Escape
+            if currentSuggestion != nil {
+                hideSuggestion()
+                return
+            }
+        }
+        
         guard !event.isARepeat else {
             super.keyDown(with: event)
             return
         }
         
+        // Handle Tab key - check for autocomplete suggestion first
         if event.keyCode == 48 {
+            // Try to accept autocomplete suggestion first
+            if acceptSuggestion() {
+                return
+            }
+            
             let selectedRange = self.selectedRange()
             let text = self.string as NSString
             
@@ -307,6 +506,16 @@ private class ThickCursorTextView: NSTextView {
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
         super.insertText(insertString, replacementRange: replacementRange)
         
+        // Update autocomplete suggestion
+        if let str = insertString as? String {
+            // Hide suggestion if space or punctuation is typed
+            if str.rangeOfCharacter(from: CharacterSet.alphanumerics) == nil {
+                hideSuggestion()
+            } else {
+                updateSuggestion()
+            }
+        }
+        
         // Check if "/" was typed at the beginning of a line
         guard let str = insertString as? String, str == "/" else { return }
         
@@ -330,6 +539,12 @@ private class ThickCursorTextView: NSTextView {
         }
     }
     
+    override func deleteBackward(_ sender: Any?) {
+        super.deleteBackward(sender)
+        // Update suggestion after deletion
+        updateSuggestion()
+    }
+    
     override func layout() {
         super.layout()
         updateHighlights()
@@ -346,6 +561,9 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     var fontSize: Double
     var fontFamily: String
     var searchText: String
+    var autocompleteEnabled: Bool
+    var autocompleteDelay: Double
+    var autocompleteOpacity: Double
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -376,6 +594,9 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.cursorAnimationEnabled = cursorAnimationEnabled
         textView.cursorAnimationDuration = cursorAnimationDuration
         textView.searchText = searchText
+        textView.autocompleteEnabled = autocompleteEnabled
+        textView.autocompleteDelay = autocompleteDelay
+        textView.autocompleteOpacity = autocompleteOpacity
         textView.isRichText = false
         textView.allowsUndo = true
         textView.isEditable = true
@@ -439,6 +660,9 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.cursorAnimationEnabled = cursorAnimationEnabled
         textView.cursorAnimationDuration = cursorAnimationDuration
         textView.searchText = searchText
+        textView.autocompleteEnabled = autocompleteEnabled
+        textView.autocompleteDelay = autocompleteDelay
+        textView.autocompleteOpacity = autocompleteOpacity
         if let layoutManager = textView.layoutManager as? ThickCursorLayoutManager {
             layoutManager.cursorWidth = cursorWidth
         }
