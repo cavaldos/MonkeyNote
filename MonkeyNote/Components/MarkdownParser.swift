@@ -21,6 +21,8 @@ enum MarkdownStyle {
     case heading3       // ### heading
     case link           // [text](url)
     case image          // ![alt](url)
+    case numberedList   // 1. 2. 3. etc.
+    case bulletList     // • bullet
 }
 
 // MARK: - Markdown Match
@@ -49,6 +51,13 @@ class MarkdownParser {
             ("^### (.+)$", .heading3, 4, 0),
             ("^## (.+)$", .heading2, 3, 0),
             ("^# (.+)$", .heading1, 2, 0),
+            
+            // Numbered list - only match the number and dot at start of line (e.g. "1.", "12.")
+            // Uses lookahead to ensure space follows but doesn't include it in match
+            ("^(\\d+\\.)", .numberedList, 0, 0),
+            
+            // Bullet list - match bullet at start of line (only the bullet, not the space)
+            ("^(•)", .bulletList, 0, 0),
             
             // Bold + Italic (must come before bold and italic)
             ("\\*\\*\\*([^*]+)\\*\\*\\*", .boldItalic, 3, 3),
@@ -83,7 +92,7 @@ class MarkdownParser {
             do {
                 let options: NSRegularExpression.Options
                 switch definition.style {
-                case .heading1, .heading2, .heading3:
+                case .heading1, .heading2, .heading3, .numberedList, .bulletList:
                     options = [.anchorsMatchLines]
                 default:
                     options = []
@@ -123,6 +132,9 @@ class MarkdownParser {
                     
                 case .heading1, .heading2, .heading3:
                     markdownMatch = parseHeading(match: match, style: style, syntaxLengths: syntaxLengths, in: nsText)
+                    
+                case .numberedList, .bulletList:
+                    markdownMatch = parseListMarker(match: match, style: style, in: nsText)
                     
                 default:
                     markdownMatch = parseInlineStyle(match: match, style: style, syntaxLengths: syntaxLengths, in: nsText)
@@ -209,6 +221,22 @@ class MarkdownParser {
             url: url
         )
     }
+    
+    private func parseListMarker(match: NSTextCheckingResult, style: MarkdownStyle, in text: NSString) -> MarkdownMatch {
+        let fullRange = match.range
+        
+        // For numbered list "1. " or bullet "• ", the whole match is the marker
+        // contentRange is the same as fullRange (we want to color the whole marker)
+        // No syntax ranges to hide
+        
+        return MarkdownMatch(
+            range: fullRange,
+            contentRange: fullRange,
+            style: style,
+            syntaxRanges: [],  // Don't hide anything
+            url: nil
+        )
+    }
 }
 
 // MARK: - Style Attributes
@@ -247,25 +275,30 @@ extension MarkdownParser {
             attributes[.foregroundColor] = NSColor.black
             
         case .inlineCode:
-            let codeFont = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize * 0.9, weight: .medium)
+            let codeFont = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize * 0.85, weight: .medium)
             attributes[.font] = codeFont
-            attributes[.backgroundColor] = NSColor.gray.withAlphaComponent(0.25)
-            attributes[.foregroundColor] = NSColor.systemPink
+            // Use custom key for rounded background (handled by ThickCursorLayoutManager)
+            let roundedBackgroundKey = NSAttributedString.Key("roundedBackgroundColor")
+            attributes[roundedBackgroundKey] = NSColor(red: 0.2, green: 0.2, blue: 0.22, alpha: 1.0) // Dark background
+            attributes[.foregroundColor] = NSColor(red: 0.95, green: 0.45, blue: 0.45, alpha: 1.0) // Coral/red color
             
         case .heading1:
             let size = baseFont.pointSize * 1.6
             attributes[.font] = NSFont.systemFont(ofSize: size, weight: .bold)
-            attributes[.foregroundColor] = NSColor.systemOrange
+            // Brown color for all headings
+            attributes[.foregroundColor] = NSColor(red: 0.6, green: 0.4, blue: 0.2, alpha: 1.0)
             
         case .heading2:
             let size = baseFont.pointSize * 1.4
             attributes[.font] = NSFont.systemFont(ofSize: size, weight: .bold)
-            attributes[.foregroundColor] = NSColor.systemYellow
+            // Brown color for all headings
+            attributes[.foregroundColor] = NSColor(red: 0.6, green: 0.4, blue: 0.2, alpha: 1.0)
             
         case .heading3:
             let size = baseFont.pointSize * 1.2
             attributes[.font] = NSFont.systemFont(ofSize: size, weight: .semibold)
-            attributes[.foregroundColor] = NSColor.systemGreen
+            // Brown color for all headings
+            attributes[.foregroundColor] = NSColor(red: 0.6, green: 0.4, blue: 0.2, alpha: 1.0)
             
         case .link:
             attributes[.foregroundColor] = NSColor.systemBlue
@@ -274,6 +307,14 @@ extension MarkdownParser {
         case .image:
             attributes[.foregroundColor] = NSColor.systemPurple
             attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+            
+        case .numberedList:
+            // Purple color for numbered list markers (1. 2. 3. etc.)
+            attributes[.foregroundColor] = NSColor(red: 0.7, green: 0.4, blue: 0.9, alpha: 1.0) // Purple
+            
+        case .bulletList:
+            // Purple color for bullet markers (•)
+            attributes[.foregroundColor] = NSColor(red: 0.7, green: 0.4, blue: 0.9, alpha: 1.0) // Purple
         }
         
         return attributes

@@ -161,6 +161,44 @@ class WordSuggestionManager {
 
 private class ThickCursorLayoutManager: NSLayoutManager {
     var cursorWidth: CGFloat = 6
+    
+    // Custom attribute key for rounded background
+    static let roundedBackgroundColorKey = NSAttributedString.Key("roundedBackgroundColor")
+    
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+        
+        // Draw rounded backgrounds for inline code
+        guard let textStorage = textStorage else { return }
+        
+        let characterRange = self.characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        
+        textStorage.enumerateAttribute(Self.roundedBackgroundColorKey, in: characterRange, options: []) { value, range, _ in
+            guard let color = value as? NSColor else { return }
+            
+            let glyphRange = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            
+            // Get all rects for this range (handles line wrapping)
+            self.enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: textContainers.first!) { rect, _ in
+                var adjustedRect = rect
+                adjustedRect.origin.x += origin.x
+                adjustedRect.origin.y += origin.y
+                
+                // Add padding
+                let horizontalPadding: CGFloat = 4
+                let verticalPadding: CGFloat = 2
+                adjustedRect.origin.x -= horizontalPadding
+                adjustedRect.origin.y -= verticalPadding
+                adjustedRect.size.width += horizontalPadding * 2
+                adjustedRect.size.height += verticalPadding * 2
+                
+                // Draw rounded rectangle
+                let path = NSBezierPath(roundedRect: adjustedRect, xRadius: 5, yRadius: 5)
+                color.setFill()
+                path.fill()
+            }
+        }
+    }
 }
 
 private class ThickCursorTextView: NSTextView {
@@ -537,23 +575,29 @@ private class ThickCursorTextView: NSTextView {
             let selectedRange = self.selectedRange()
             let text = self.string as NSString
             
-            // Check if character BEFORE cursor is "-"
+            // Check if character BEFORE cursor is "-" or "."
             if selectedRange.location > 0 {
                 let prevCharIndex = selectedRange.location - 1
                 if prevCharIndex < text.length {
                     let prevChar = text.substring(with: NSRange(location: prevCharIndex, length: 1))
-                    if prevChar == "-" {
-                        // Get the rest of the line after the dash
+                    
+                    // Check for "-" or "." at start of line for bullet list
+                    if prevChar == "-" || prevChar == "." {
+                        // Verify it's at the start of the line
                         let lineRange = text.lineRange(for: NSRange(location: prevCharIndex, length: 0))
-                        let rangeAfterDash = NSRange(location: prevCharIndex + 1, length: lineRange.location + lineRange.length - prevCharIndex - 1)
-                        let remainingText = text.substring(with: rangeAfterDash)
+                        let isAtLineStart = prevCharIndex == lineRange.location
                         
-                        // Replace the entire line from dash to end with bullet + remaining text
-                        let lineAfterDash = NSRange(location: prevCharIndex, length: lineRange.location + lineRange.length - prevCharIndex)
-                        let newText = "• " + remainingText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        self.replaceCharacters(in: lineAfterDash, with: newText)
-                        self.setSelectedRange(NSRange(location: prevCharIndex + newText.utf16.count, length: 0))
-                        return
+                        if isAtLineStart {
+                            let rangeAfterChar = NSRange(location: prevCharIndex + 1, length: lineRange.location + lineRange.length - prevCharIndex - 1)
+                            let remainingText = text.substring(with: rangeAfterChar)
+                            
+                            // Replace the entire line from dash/dot to end with bullet + remaining text
+                            let lineAfterChar = NSRange(location: prevCharIndex, length: lineRange.location + lineRange.length - prevCharIndex)
+                            let newText = "• " + remainingText.trimmingCharacters(in: .whitespacesAndNewlines)
+                            self.replaceCharacters(in: lineAfterChar, with: newText)
+                            self.setSelectedRange(NSRange(location: prevCharIndex + newText.utf16.count, length: 0))
+                            return
+                        }
                     }
                     
                     // Check for numbered list pattern like "1."
@@ -641,6 +685,41 @@ private class ThickCursorTextView: NSTextView {
     }
     
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        guard let str = insertString as? String else {
+            super.insertText(insertString, replacementRange: replacementRange)
+            return
+        }
+        
+        // Check for space after "." or "-" at line start to convert to bullet
+        if str == " " {
+            let selectedRange = self.selectedRange()
+            let text = self.string as NSString
+            
+            if selectedRange.location > 0 {
+                let prevCharIndex = selectedRange.location - 1
+                let prevChar = text.substring(with: NSRange(location: prevCharIndex, length: 1))
+                
+                // Check for "." or "-" at start of line
+                if prevChar == "." || prevChar == "-" {
+                    let lineRange = text.lineRange(for: NSRange(location: prevCharIndex, length: 0))
+                    let isAtLineStart = prevCharIndex == lineRange.location
+                    
+                    if isAtLineStart {
+                        // Replace "." or "-" with bullet
+                        let rangeToReplace = NSRange(location: prevCharIndex, length: 1)
+                        self.replaceCharacters(in: rangeToReplace, with: "• ")
+                        self.setSelectedRange(NSRange(location: prevCharIndex + "• ".utf16.count, length: 0))
+                        
+                        // Update cursor position in MarkdownTextStorage
+                        if let textStorage = self.textStorage as? MarkdownTextStorage {
+                            textStorage.cursorPosition = self.selectedRange().location
+                        }
+                        return
+                    }
+                }
+            }
+        }
+        
         super.insertText(insertString, replacementRange: replacementRange)
         
         // Update cursor position in MarkdownTextStorage
@@ -649,17 +728,15 @@ private class ThickCursorTextView: NSTextView {
         }
         
         // Update autocomplete suggestion
-        if let str = insertString as? String {
-            // Hide suggestion if space or punctuation is typed
-            if str.rangeOfCharacter(from: CharacterSet.alphanumerics) == nil {
-                hideSuggestion()
-            } else {
-                updateSuggestion()
-            }
+        // Hide suggestion if space or punctuation is typed
+        if str.rangeOfCharacter(from: CharacterSet.alphanumerics) == nil {
+            hideSuggestion()
+        } else {
+            updateSuggestion()
         }
         
         // Check if "/" was typed at the beginning of a line
-        guard let str = insertString as? String, str == "/" else { return }
+        guard str == "/" else { return }
         
         let selectedRange = self.selectedRange()
         let text = self.string as NSString
@@ -766,8 +843,8 @@ private class ThickCursorTextView: NSTextView {
             newText = "**\(selectedText)**"
         case .italic:
             newText = "_\(selectedText)_"
-        case .underline:
-            newText = "<u>\(selectedText)</u>"
+        case .code:
+            newText = "`\(selectedText)`"
         case .strikethrough:
             newText = "~~\(selectedText)~~"
         case .highlight:
@@ -823,6 +900,46 @@ private class ThickCursorTextView: NSTextView {
         // Update cursor position
         let newCursorPosition = range.location + newText.utf16.count
         setSelectedRange(NSRange(location: newCursorPosition, length: 0))
+    }
+    
+    // MARK: - Link Handling
+    
+    override func clicked(onLink link: Any, at charIndex: Int) {
+        // Handle link click manually to prevent errors
+        guard let urlString = link as? String else { return }
+        
+        // Try to create URL and open it
+        var urlToOpen: URL?
+        
+        if let url = URL(string: urlString) {
+            // Check if URL has a scheme
+            if url.scheme != nil {
+                urlToOpen = url
+            } else {
+                // Add https:// if no scheme
+                urlToOpen = URL(string: "https://\(urlString)")
+            }
+        }
+        
+        if let url = urlToOpen {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    // Prevent default link behavior that causes errors
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let charIndex = characterIndexForInsertion(at: point)
+        
+        // Check if clicked on a link
+        if charIndex < textStorage?.length ?? 0,
+           let attrs = textStorage?.attributes(at: charIndex, effectiveRange: nil),
+           let link = attrs[.link] {
+            clicked(onLink: link, at: charIndex)
+            return
+        }
+        
+        super.mouseDown(with: event)
     }
     
     override func layout() {
