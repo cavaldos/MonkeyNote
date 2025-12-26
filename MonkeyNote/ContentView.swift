@@ -513,27 +513,13 @@ struct ContentView: View {
         .clipped()
         .navigationTitle(selectedFolderID == nil ? "Notes" : (getFolder(folderID: selectedFolderID!)?.name ?? "Notes"))
         .toolbar {
-            ToolbarItemGroup {
+            ToolbarItem(placement: .primaryAction) {
                 Button {
                     addNote()
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
                 .disabled(selectedFolderID == nil)
-
-                Button {
-                    startRenameSelectedNote()
-                } label: {
-                    Image(systemName: "pencil")
-                }
-                .disabled(selectedNoteID == nil)
-
-                Button(role: .destructive) {
-                    deleteSelectedNote()
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .disabled(selectedNoteID == nil)
             }
         }
     }
@@ -568,7 +554,21 @@ struct ContentView: View {
             ToolbarItem(placement: .principal) {
                 Spacer()
             }
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    startRenameSelectedNote()
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .disabled(selectedNoteID == nil)
+
+                Button(role: .destructive) {
+                    deleteSelectedNote()
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .disabled(selectedNoteID == nil)
+                
                 HStack(spacing: 4) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
