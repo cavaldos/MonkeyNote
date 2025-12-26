@@ -8,6 +8,69 @@
 import SwiftUI
 import Combine
 
+// MARK: - Notifications
+extension Notification.Name {
+    static let focusSearch = Notification.Name("focusSearch")
+}
+
+// MARK: - Focusable Search TextField
+#if os(macOS)
+struct FocusableSearchField: NSViewRepresentable {
+    @Binding var text: String
+    
+    func makeNSView(context: Context) -> NSTextField {
+        let textField = NSTextField()
+        textField.placeholderString = "Search"
+        textField.isBordered = false
+        textField.backgroundColor = .clear
+        textField.font = .systemFont(ofSize: 12)
+        textField.focusRingType = .none
+        textField.delegate = context.coordinator
+        
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.focusTextField),
+            name: .focusSearch,
+            object: nil
+        )
+        context.coordinator.textField = textField
+        
+        return textField
+    }
+    
+    func updateNSView(_ nsView: NSTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+    
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        @Binding var text: String
+        weak var textField: NSTextField?
+        
+        init(text: Binding<String>) {
+            _text = text
+        }
+        
+        @objc func focusTextField() {
+            DispatchQueue.main.async {
+                self.textField?.window?.makeFirstResponder(self.textField)
+            }
+        }
+        
+        func controlTextDidChange(_ obj: Notification) {
+            if let textField = obj.object as? NSTextField {
+                text = textField.stringValue
+            }
+        }
+    }
+}
+#endif
+
 // MARK: - Main View
 
 struct ContentView: View {
@@ -33,6 +96,9 @@ struct ContentView: View {
     
     // Drag & Drop state
     @State private var dragOverFolderID: NoteFolder.ID?
+    
+    // Search focus
+    @FocusState private var isSearchFocused: Bool
 
     @AppStorage("note.fontFamily") private var fontFamily: String = "monospaced"
     @AppStorage("note.fontSize") private var fontSize: Double = 28
@@ -437,11 +503,13 @@ struct ContentView: View {
                     }
                 }
                 .scrollContentBackground(.hidden)
+                .clipped()
             } else {
                 Text("Choose a folder")
                     .foregroundStyle(.secondary)
             }
         }
+        .clipped()
         .navigationTitle(selectedFolderID == nil ? "Notes" : (getFolder(folderID: selectedFolderID!)?.name ?? "Notes"))
         .toolbar {
             ToolbarItemGroup {
@@ -504,9 +572,15 @@ struct ContentView: View {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
                         .font(.system(size: 11))
+                    #if os(macOS)
+                    FocusableSearchField(text: $searchText)
+                        .frame(width: 90)
+                    #else
                     TextField("Search", text: $searchText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
+                        .focused($isSearchFocused)
+                    #endif
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)

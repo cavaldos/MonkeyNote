@@ -14,5 +14,13 @@ struct MonkeyNoteApp: App {
             ContentView()
         }
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            CommandGroup(after: .textEditing) {
+                Button("Find") {
+                    NotificationCenter.default.post(name: .focusSearch, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+            }
+        }
     }
 } 
