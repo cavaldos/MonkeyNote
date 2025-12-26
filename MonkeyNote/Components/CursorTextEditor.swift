@@ -1016,8 +1016,12 @@ private class ThickCursorTextView: NSTextView {
             textStorage.cursorPosition = selectedRange.location
         }
         
-        // Selection toolbar disabled - only color highlighting is used
-        selectionToolbarController.dismiss()
+        // Show selection toolbar when there's a selection
+        if selectedRange.length > 0 {
+            showSelectionToolbar(for: selectedRange)
+        } else {
+            selectionToolbarController.dismiss()
+        }
     }
     
     private func showSelectionToolbar(for range: NSRange) {
