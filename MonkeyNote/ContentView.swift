@@ -504,6 +504,7 @@ struct ContentView: View {
                 }
                 .scrollContentBackground(.hidden)
                 .clipped()
+                .id(searchText)
             } else {
                 Text("Choose a folder")
                     .foregroundStyle(.secondary)
