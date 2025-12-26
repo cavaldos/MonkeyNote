@@ -248,11 +248,13 @@ struct ContentView: View {
             .count
     }
 
-    // Rough reading time: 200 wpm → seconds
-    private var estimatedSeconds: Int {
-        guard wordCount > 0 else { return 0 }
-        let seconds = (Double(wordCount) / 200.0) * 60.0
-        return max(1, Int(ceil(seconds)))
+    private var lineCount: Int {
+        guard !selectedNoteText.isEmpty else { return 1 }
+        return selectedNoteText.components(separatedBy: .newlines).count
+    }
+
+    private var characterCount: Int {
+        selectedNoteText.replacingOccurrences(of: "\n", with: "").count
     }
 
     var body: some View {
@@ -402,9 +404,13 @@ struct ContentView: View {
                 .font(.system(size: 12, weight: .regular))
             Text("\(wordCount) words")
             Text("|")
-            Image(systemName: "clock")
+            Image(systemName: "text.alignleft")
                 .font(.system(size: 12, weight: .regular))
-            Text("\(estimatedSeconds) secs")
+            Text("\(lineCount) lines")
+            Text("|")
+            Image(systemName: "character.cursor.ibeam")
+                .font(.system(size: 12, weight: .regular))
+            Text("\(characterCount) chars")
         }
         .font(.system(.footnote, design: .monospaced))
         .foregroundStyle(isDarkMode ? .white.opacity(0.45) : .black.opacity(0.55))
