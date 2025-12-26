@@ -11,12 +11,15 @@ import Combine
 // MARK: - Notifications
 extension Notification.Name {
     static let focusSearch = Notification.Name("focusSearch")
+    static let focusEditor = Notification.Name("focusEditor")
 }
 
 // MARK: - Focusable Search TextField
 #if os(macOS)
 struct FocusableSearchField: NSViewRepresentable {
     @Binding var text: String
+    var onSubmit: (() -> Void)? = nil
+    var onEscape: (() -> Void)? = nil
     
     func makeNSView(context: Context) -> NSTextField {
         let textField = NSTextField()
@@ -42,18 +45,24 @@ struct FocusableSearchField: NSViewRepresentable {
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
+        context.coordinator.onSubmit = onSubmit
+        context.coordinator.onEscape = onEscape
     }
     
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
+        Coordinator(text: $text, onSubmit: onSubmit, onEscape: onEscape)
     }
     
     class Coordinator: NSObject, NSTextFieldDelegate {
         @Binding var text: String
         weak var textField: NSTextField?
+        var onSubmit: (() -> Void)?
+        var onEscape: (() -> Void)?
         
-        init(text: Binding<String>) {
+        init(text: Binding<String>, onSubmit: (() -> Void)?, onEscape: (() -> Void)?) {
             _text = text
+            self.onSubmit = onSubmit
+            self.onEscape = onEscape
         }
         
         @objc func focusTextField() {
@@ -66,6 +75,22 @@ struct FocusableSearchField: NSViewRepresentable {
             if let textField = obj.object as? NSTextField {
                 text = textField.stringValue
             }
+        }
+        
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                // Enter key pressed
+                onSubmit?()
+                return true
+            } else if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+                // ESC key pressed - unfocus and return focus to editor
+                textField?.window?.makeFirstResponder(nil)
+                onEscape?()
+                // Post notification to focus editor
+                NotificationCenter.default.post(name: .focusEditor, object: nil)
+                return true
+            }
+            return false
         }
     }
 }
@@ -84,6 +109,10 @@ struct ContentView: View {
     @State private var selectedNoteID: NoteItem.ID?
 
     @State private var searchText: String = ""
+    
+    // Search navigation state
+    @State private var searchMatchCount: Int = 0
+    @State private var currentSearchIndex: Int = 0
 
     @State private var renameRequest: RenameRequest?
     
@@ -282,7 +311,15 @@ struct ContentView: View {
             autocompleteOpacity: autocompleteOpacity,
             suggestionMode: suggestionMode,
             markdownRenderEnabled: markdownRenderEnabled,
-            horizontalPadding: 46
+            horizontalPadding: 46,
+            currentSearchIndex: currentSearchIndex,
+            onSearchMatchesChanged: { count in
+                searchMatchCount = count
+                // Reset index if it's out of bounds
+                if currentSearchIndex >= count {
+                    currentSearchIndex = max(0, count - 1)
+                }
+            }
         )
         .overlay(alignment: .topLeading) {
             if selectedNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -313,6 +350,24 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 #endif
+    }
+    
+    // MARK: - Search Navigation Functions
+    
+    private func navigateToNextMatch() {
+        guard searchMatchCount > 0 else { return }
+        currentSearchIndex = (currentSearchIndex + 1) % searchMatchCount
+    }
+    
+    private func navigateToPreviousMatch() {
+        guard searchMatchCount > 0 else { return }
+        currentSearchIndex = (currentSearchIndex - 1 + searchMatchCount) % searchMatchCount
+    }
+    
+    private func closeSearch() {
+        searchText = ""
+        currentSearchIndex = 0
+        searchMatchCount = 0
     }
 
     private var statusBar: some View {
@@ -637,19 +692,88 @@ struct ContentView: View {
                 }
                 .disabled(selectedNoteID == nil)
                 
-                HStack(spacing: 4) {
+                // Search field with results and navigation
+                HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
                         .font(.system(size: 11))
                     #if os(macOS)
-                    FocusableSearchField(text: $searchText)
-                        .frame(width: 90)
+                    FocusableSearchField(
+                        text: $searchText,
+                        onSubmit: { navigateToNextMatch() },
+                        onEscape: { closeSearch() }
+                    )
+                    .frame(width: 80)
                     #else
                     TextField("Search", text: $searchText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
                         .focused($isSearchFocused)
                     #endif
+                    
+                    // Show results and navigation when searching
+                    if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        // Hint text
+                        Text("⏎")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                        
+                        // Divider
+                        Rectangle()
+                            .fill(isDarkMode ? Color.white.opacity(0.2) : Color.black.opacity(0.15))
+                            .frame(width: 1, height: 14)
+                        
+                        // Results count
+                        Text(searchMatchCount > 0 ? "\(currentSearchIndex + 1)/\(searchMatchCount)" : "0")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(isDarkMode ? .white.opacity(0.7) : .black.opacity(0.7))
+                        
+                        // Navigation buttons
+                        Button {
+                            navigateToPreviousMatch()
+                        } label: {
+                            Image(systemName: "chevron.up")
+                                .font(.system(size: 9, weight: .semibold))
+                                .frame(width: 18, height: 18)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(isDarkMode ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(searchMatchCount == 0)
+                        
+                        Button {
+                            navigateToNextMatch()
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .semibold))
+                                .frame(width: 18, height: 18)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(isDarkMode ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(searchMatchCount == 0)
+                        
+                        // Close button
+                        Button {
+                            closeSearch()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8, weight: .semibold))
+                                .frame(width: 18, height: 18)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(isDarkMode ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -657,7 +781,6 @@ struct ContentView: View {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
                 )
-                .frame(width: 120)
             }
         }
     }

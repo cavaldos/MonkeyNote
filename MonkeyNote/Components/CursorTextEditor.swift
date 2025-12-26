@@ -246,6 +246,11 @@ private class ThickCursorTextView: NSTextView {
     var autocompleteOpacity: Double = 0.5
     var suggestionMode: String = "word"  // "word" or "sentence"
     
+    // Search navigation
+    var currentSearchIndex: Int = 0
+    var onSearchMatchesChanged: ((Int) -> Void)?
+    private var searchMatchRanges: [NSRange] = []
+    
     // Disable auto-scroll to cursor when typing
     var disableAutoScroll: Bool = false
     
@@ -377,12 +382,20 @@ private class ThickCursorTextView: NSTextView {
     func updateHighlights() {
         self.highlightLayers.forEach { $0.removeFromSuperlayer() }
         self.highlightLayers.removeAll()
+        self.searchMatchRanges.removeAll()
 
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty, let layoutManager = layoutManager, let textContainer = textContainer else { return }
+        guard !query.isEmpty, let layoutManager = layoutManager, let textContainer = textContainer else {
+            // Notify no matches when search is empty
+            onSearchMatchesChanged?(0)
+            return
+        }
 
         let text = self.string
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty else {
+            onSearchMatchesChanged?(0)
+            return
+        }
         
         // Ensure layout is complete before calculating highlight positions
         let fullRange = NSRange(location: 0, length: text.utf16.count)
@@ -392,6 +405,7 @@ private class ThickCursorTextView: NSTextView {
         let origin = textContainerOrigin
 
         var searchRange = NSRange(location: 0, length: text.utf16.count)
+        var matchIndex = 0
 
         while searchRange.location < text.utf16.count {
             let foundRange = (text as NSString).range(of: query, options: .caseInsensitive, range: searchRange)
@@ -404,6 +418,9 @@ private class ThickCursorTextView: NSTextView {
             guard foundRange.location + foundRange.length <= text.utf16.count else {
                 break
             }
+            
+            // Store the match range for navigation
+            searchMatchRanges.append(foundRange)
 
             let glyphRange = layoutManager.glyphRange(forCharacterRange: foundRange, actualCharacterRange: nil)
             
@@ -414,12 +431,20 @@ private class ThickCursorTextView: NSTextView {
                 continue
             }
             
+            // Determine if this is the current match (for different highlight color)
+            let isCurrentMatch = matchIndex == currentSearchIndex
+            
             layoutManager.enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: textContainer) { rect, _ in
                 // Skip invalid rects
                 guard rect.width > 0 && rect.height > 0 else { return }
                 
                 let highlightLayer = CALayer()
-                highlightLayer.backgroundColor = NSColor.yellow.withAlphaComponent(0.3).cgColor
+                // Use different color for current match
+                if isCurrentMatch {
+                    highlightLayer.backgroundColor = NSColor.orange.withAlphaComponent(0.5).cgColor
+                } else {
+                    highlightLayer.backgroundColor = NSColor.yellow.withAlphaComponent(0.3).cgColor
+                }
                 highlightLayer.cornerRadius = 2
                 // Offset the rect by textContainerOrigin to get correct position in view
                 highlightLayer.frame = rect.offsetBy(dx: origin.x, dy: origin.y)
@@ -427,9 +452,30 @@ private class ThickCursorTextView: NSTextView {
                 self.highlightLayers.append(highlightLayer)
             }
 
+            matchIndex += 1
             searchRange.location = foundRange.location + foundRange.length
             searchRange.length = text.utf16.count - searchRange.location
         }
+        
+        // Notify about total matches count
+        onSearchMatchesChanged?(searchMatchRanges.count)
+    }
+    
+    // Navigate to a specific search match by index
+    func navigateToMatch(index: Int) {
+        guard index >= 0 && index < searchMatchRanges.count else { return }
+        
+        let matchRange = searchMatchRanges[index]
+        
+        // Select the match
+        setSelectedRange(matchRange)
+        
+        // Scroll to make it visible
+        scrollRangeToVisible(matchRange)
+        
+        // Update highlights to show new current match
+        currentSearchIndex = index
+        updateHighlights()
     }
     
     // MARK: - Autocomplete Ghost Text
@@ -934,12 +980,8 @@ private class ThickCursorTextView: NSTextView {
             textStorage.cursorPosition = selectedRange.location
         }
         
-        // Only show toolbar when there's a selection (not just cursor)
-        if selectedRange.length > 0 {
-            showSelectionToolbar(for: selectedRange)
-        } else {
-            selectionToolbarController.dismiss()
-        }
+        // Selection toolbar disabled - only color highlighting is used
+        selectionToolbarController.dismiss()
     }
     
     private func showSelectionToolbar(for range: NSRange) {
@@ -1143,6 +1185,11 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     var suggestionMode: String
     var markdownRenderEnabled: Bool = true
     var horizontalPadding: CGFloat = 0
+    
+    // Search navigation
+    var currentSearchIndex: Int = 0
+    var onSearchMatchesChanged: ((Int) -> Void)? = nil  // Reports total matches count
+    var onNavigateToMatch: ((Int) -> Void)? = nil  // Called when should navigate to specific match
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -1174,6 +1221,8 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.cursorAnimationEnabled = cursorAnimationEnabled
         textView.cursorAnimationDuration = cursorAnimationDuration
         textView.searchText = searchText
+        textView.currentSearchIndex = currentSearchIndex
+        textView.onSearchMatchesChanged = onSearchMatchesChanged
         textView.autocompleteEnabled = autocompleteEnabled
         textView.autocompleteDelay = autocompleteDelay
         textView.autocompleteOpacity = autocompleteOpacity
@@ -1257,6 +1306,8 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.cursorAnimationEnabled = cursorAnimationEnabled
         textView.cursorAnimationDuration = cursorAnimationDuration
         textView.searchText = searchText
+        textView.currentSearchIndex = currentSearchIndex
+        textView.onSearchMatchesChanged = onSearchMatchesChanged
         textView.autocompleteEnabled = autocompleteEnabled
         textView.autocompleteDelay = autocompleteDelay
         textView.autocompleteOpacity = autocompleteOpacity
@@ -1303,15 +1354,45 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             }
         }
 
-        textView.updateHighlights()
+        // Check if search index changed and navigate to match
+        let previousIndex = context.coordinator.lastSearchIndex
+        if currentSearchIndex != previousIndex && !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            context.coordinator.lastSearchIndex = currentSearchIndex
+            // Need to update highlights first to populate searchMatchRanges
+            textView.updateHighlights()
+            // Then navigate to the match
+            textView.navigateToMatch(index: currentSearchIndex)
+        } else {
+            textView.updateHighlights()
+        }
     }
 
     class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ThickCursorTextEditor
         fileprivate weak var textView: ThickCursorTextView?
+        var lastSearchIndex: Int = 0
 
         init(_ parent: ThickCursorTextEditor) {
             self.parent = parent
+            super.init()
+            
+            // Listen for focusEditor notification
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(focusEditor),
+                name: Notification.Name("focusEditor"),
+                object: nil
+            )
+        }
+        
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+        
+        @objc func focusEditor() {
+            DispatchQueue.main.async {
+                self.textView?.window?.makeFirstResponder(self.textView)
+            }
         }
 
         func textDidChange(_ notification: Notification) {
