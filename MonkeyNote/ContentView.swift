@@ -667,7 +667,20 @@ struct ContentView: View {
     }
 
     private func addFolder(atRoot: Bool) {
-        let newFolder = NoteFolder(name: "New Folder")
+        let baseName = "New Folder"
+        let targetList: [NoteFolder]
+        
+        if atRoot || selectedFolderID == nil {
+            targetList = folders
+        } else if let parentID = selectedFolderID {
+            targetList = getChildrenFolders(parentFolderID: parentID)
+        } else {
+            targetList = folders
+        }
+        
+        let uniqueName = uniqueFolderName(baseName, in: targetList)
+        let newFolder = NoteFolder(name: uniqueName)
+        
         if atRoot || selectedFolderID == nil {
             folders.insert(newFolder, at: 0)
         } else if let selectedFolderID = selectedFolderID {
@@ -680,7 +693,11 @@ struct ContentView: View {
     }
 
     private func addSubfolder(parentFolderID: NoteFolder.ID) {
-        let newFolder = NoteFolder(name: "New Folder")
+        let baseName = "New Folder"
+        let targetList = getChildrenFolders(parentFolderID: parentFolderID)
+        let uniqueName = uniqueFolderName(baseName, in: targetList)
+        let newFolder = NoteFolder(name: uniqueName)
+        
         _ = insertSubfolder(in: &folders, parentFolderID: parentFolderID, subfolder: newFolder)
         selectedFolderID = newFolder.id
         selectedNoteID = nil
@@ -785,8 +802,12 @@ struct ContentView: View {
 
         switch request.kind {
         case .folder(let folderID):
+            // Check for duplicate name in siblings
+            let siblings = getSiblingFolders(folderID: folderID)
+            let finalName = uniqueFolderName(String(trimmed.prefix(60)), in: siblings, excludingFolderID: folderID)
+            
             updateFolder(folderID: folderID) { folder in
-                folder.name = String(trimmed.prefix(60))
+                folder.name = finalName
             }
             saveAllToDisk()
 
@@ -917,6 +938,50 @@ struct ContentView: View {
             }
         }
         return false
+    }
+    
+    /// Get sibling folders at the same level as the given folder
+    private func getSiblingFolders(folderID: NoteFolder.ID) -> [NoteFolder] {
+        func findSiblings(in list: [NoteFolder]) -> [NoteFolder]? {
+            // Check if folder is at this level
+            if list.contains(where: { $0.id == folderID }) {
+                return list
+            }
+            // Search in children
+            for folder in list {
+                if let found = findSiblings(in: folder.children) {
+                    return found
+                }
+            }
+            return nil
+        }
+        return findSiblings(in: folders) ?? []
+    }
+    
+    /// Get children folders of a parent folder
+    private func getChildrenFolders(parentFolderID: NoteFolder.ID) -> [NoteFolder] {
+        guard let parent = getFolder(folderID: parentFolderID) else { return [] }
+        return parent.children
+    }
+    
+    /// Check if a folder name already exists in a list of folders
+    private func folderNameExists(_ name: String, in folderList: [NoteFolder], excludingFolderID: NoteFolder.ID? = nil) -> Bool {
+        return folderList.contains { folder in
+            folder.name.lowercased() == name.lowercased() && folder.id != excludingFolderID
+        }
+    }
+    
+    /// Generate a unique folder name by appending a number if needed
+    private func uniqueFolderName(_ baseName: String, in folderList: [NoteFolder], excludingFolderID: NoteFolder.ID? = nil) -> String {
+        var name = baseName
+        var counter = 1
+        
+        while folderNameExists(name, in: folderList, excludingFolderID: excludingFolderID) {
+            counter += 1
+            name = "\(baseName) \(counter)"
+        }
+        
+        return name
     }
 
     private var fontDesign: Font.Design {
