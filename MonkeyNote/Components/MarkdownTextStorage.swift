@@ -63,6 +63,33 @@ class MarkdownTextStorage: NSTextStorage {
     private var paragraphCache: [Int: [MarkdownMatch]] = [:]
     private var paragraphRanges: [NSRange] = []
     
+    // MARK: - Viewport-based Rendering (for large documents)
+    // Threshold for switching to viewport-based mode (characters)
+    private let largeDocumentThreshold: Int = 30_000
+    
+    // Current visible range (updated by text view)
+    private var visibleRange: NSRange = NSRange(location: 0, length: 0)
+    
+    // Extended range with buffer for smooth scrolling
+    private var extendedRange: NSRange = NSRange(location: 0, length: 0)
+    
+    // Buffer size above/below visible area (characters, ~100-150 lines)
+    private let viewportBuffer: Int = 5000
+    
+    // Minimum change threshold before re-parsing (characters)
+    private let viewportChangeThreshold: Int = 1000
+    
+    // Track if using viewport mode
+    private var isViewportMode: Bool {
+        return backingStore.length > largeDocumentThreshold
+    }
+    
+    // Cache matches only for extended range in viewport mode
+    private var viewportMatches: [MarkdownMatch] = []
+    
+    // Track last styled range to avoid redundant work
+    private var lastStyledRange: NSRange = NSRange(location: 0, length: 0)
+    
     // MARK: - NSTextStorage Required Overrides
     
     override var string: String {
@@ -170,6 +197,12 @@ class MarkdownTextStorage: NSTextStorage {
     
     private func applyIncrementalMarkdownStyling(editedRange: NSRange) {
         guard backingStore.length > 0 else { return }
+        
+        // For large documents in viewport mode, only style extended range
+        if isViewportMode && extendedRange.length > 0 {
+            applyViewportMarkdownStyling()
+            return
+        }
         
         let text = backingStore.string as NSString
         
@@ -335,6 +368,25 @@ class MarkdownTextStorage: NSTextStorage {
         
         beginEditing()
         
+        // In viewport mode, only update matches within extended range
+        if isViewportMode {
+            updateViewportSyntaxVisibility()
+        } else {
+            updateFullSyntaxVisibility()
+        }
+        
+        let updateRange = isViewportMode ? extendedRange : NSRange(location: 0, length: backingStore.length)
+        if updateRange.length > 0 {
+            edited(.editedAttributes, range: updateRange, changeInLength: 0)
+        }
+        
+        endEditing()
+        
+        isProcessing = false
+    }
+    
+    /// Update syntax visibility for full document (small documents)
+    private func updateFullSyntaxVisibility() {
         // Reparse if needed
         if lastParsedString != string {
             cachedMatches = parser.parse(string)
@@ -343,29 +395,35 @@ class MarkdownTextStorage: NSTextStorage {
         
         // Update visibility for all matches
         for match in cachedMatches {
-            guard match.range.location + match.range.length <= backingStore.length else { continue }
+            updateMatchSyntaxVisibility(match)
+        }
+    }
+    
+    /// Update syntax visibility only for viewport matches (large documents)
+    private func updateViewportSyntaxVisibility() {
+        // Only update matches in viewport
+        for match in viewportMatches {
+            updateMatchSyntaxVisibility(match)
+        }
+    }
+    
+    /// Update syntax visibility for a single match
+    private func updateMatchSyntaxVisibility(_ match: MarkdownMatch) {
+        guard match.range.location + match.range.length <= backingStore.length else { return }
+        
+        let cursorInRange = isCursorInMatch(match)
+        
+        for syntaxRange in match.syntaxRanges {
+            guard syntaxRange.location + syntaxRange.length <= backingStore.length else { continue }
             
-            let cursorInRange = isCursorInMatch(match)
-            
-            for syntaxRange in match.syntaxRanges {
-                guard syntaxRange.location + syntaxRange.length <= backingStore.length else { continue }
-                
-                if cursorInRange {
-                    // Show syntax
-                    backingStore.addAttributes(parser.visibleSyntaxAttributes(baseFont: baseFont), range: syntaxRange)
-                } else {
-                    // Hide syntax
-                    backingStore.addAttributes(parser.hiddenSyntaxAttributes, range: syntaxRange)
-                }
+            if cursorInRange {
+                // Show syntax
+                backingStore.addAttributes(parser.visibleSyntaxAttributes(baseFont: baseFont), range: syntaxRange)
+            } else {
+                // Hide syntax
+                backingStore.addAttributes(parser.hiddenSyntaxAttributes, range: syntaxRange)
             }
         }
-        
-        let fullRange = NSRange(location: 0, length: backingStore.length)
-        edited(.editedAttributes, range: fullRange, changeInLength: 0)
-        
-        endEditing()
-        
-        isProcessing = false
     }
     
     // MARK: - Full Reprocess
@@ -377,7 +435,12 @@ class MarkdownTextStorage: NSTextStorage {
         
         beginEditing()
         
-        applyFullMarkdownStyling()
+        // Use viewport-based styling for large documents
+        if isViewportMode && extendedRange.length > 0 {
+            applyViewportMarkdownStyling()
+        } else {
+            applyFullMarkdownStyling()
+        }
         
         let fullRange = NSRange(location: 0, length: backingStore.length)
         edited(.editedAttributes, range: fullRange, changeInLength: 0)
@@ -385,6 +448,110 @@ class MarkdownTextStorage: NSTextStorage {
         endEditing()
         
         isProcessing = false
+    }
+    
+    // MARK: - Viewport-based Rendering
+    
+    /// Update the visible range - called by text view when scrolling
+    /// - Parameter newVisibleRange: The character range currently visible in the viewport
+    func updateVisibleRange(_ newVisibleRange: NSRange) {
+        visibleRange = newVisibleRange
+        
+        // For small documents, use full parsing (faster for small docs)
+        guard isViewportMode else { return }
+        
+        // Calculate extended range with buffer above and below
+        let extendedStart = max(0, newVisibleRange.location - viewportBuffer)
+        let extendedEnd = min(backingStore.length, newVisibleRange.location + newVisibleRange.length + viewportBuffer)
+        let newExtendedRange = NSRange(location: extendedStart, length: extendedEnd - extendedStart)
+        
+        // Skip if range hasn't changed significantly (avoid excessive re-parsing)
+        let locationChange = abs(extendedRange.location - newExtendedRange.location)
+        let lengthChange = abs(extendedRange.length - newExtendedRange.length)
+        
+        if locationChange < viewportChangeThreshold && lengthChange < viewportChangeThreshold {
+            return
+        }
+        
+        extendedRange = newExtendedRange
+        
+        // Re-parse and style the new viewport
+        guard !isProcessing else { return }
+        
+        isProcessing = true
+        beginEditing()
+        
+        applyViewportMarkdownStyling()
+        
+        edited(.editedAttributes, range: extendedRange, changeInLength: 0)
+        endEditing()
+        
+        isProcessing = false
+    }
+    
+    /// Apply markdown styling only to the extended viewport range
+    private func applyViewportMarkdownStyling() {
+        guard backingStore.length > 0, extendedRange.length > 0 else { return }
+        guard markdownRenderEnabled else {
+            // Just apply base styling to extended range
+            applyBaseStylingToRange(extendedRange)
+            viewportMatches = []
+            return
+        }
+        
+        let text = backingStore.string as NSString
+        
+        // Expand to paragraph boundaries for correct parsing
+        let paragraphRange = text.paragraphRange(for: extendedRange)
+        
+        // Validate range
+        guard paragraphRange.location + paragraphRange.length <= backingStore.length else { return }
+        
+        // Reset base styling for extended range
+        backingStore.setAttributes([
+            .font: baseFont,
+            .foregroundColor: baseTextColor
+        ], range: paragraphRange)
+        
+        // Parse only the visible portion
+        let visibleText = text.substring(with: paragraphRange)
+        let localMatches = parser.parse(visibleText)
+        
+        // Clear viewport matches and rebuild
+        viewportMatches.removeAll()
+        viewportMatches.reserveCapacity(localMatches.count)
+        
+        // Apply styling to matches within viewport
+        for match in localMatches {
+            // Offset ranges to global position
+            let globalRange = NSRange(
+                location: match.range.location + paragraphRange.location,
+                length: match.range.length
+            )
+            let globalContentRange = NSRange(
+                location: match.contentRange.location + paragraphRange.location,
+                length: match.contentRange.length
+            )
+            let globalSyntaxRanges = match.syntaxRanges.map { syntaxRange in
+                NSRange(
+                    location: syntaxRange.location + paragraphRange.location,
+                    length: syntaxRange.length
+                )
+            }
+            
+            let globalMatch = MarkdownMatch(
+                range: globalRange,
+                contentRange: globalContentRange,
+                style: match.style,
+                syntaxRanges: globalSyntaxRanges,
+                url: match.url
+            )
+            
+            viewportMatches.append(globalMatch)
+            applyMatchStyling(globalMatch, cursorInRange: isCursorInMatch(globalMatch))
+        }
+        
+        lastStyledRange = paragraphRange
     }
 }
 

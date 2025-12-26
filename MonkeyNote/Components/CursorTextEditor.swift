@@ -1436,12 +1436,38 @@ private class ThickCursorTextView: NSTextView {
     override func layout() {
         super.layout()
         
-        // Only update if search is active
+        // Debounce viewport updates for markdown rendering
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(debouncedUpdateViewport), object: nil)
+        perform(#selector(debouncedUpdateViewport), with: nil, afterDelay: 0.05)
+        
+        // Only update search highlights if search is active
         guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
         // Debounce scroll updates to prevent excessive redraws
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(debouncedUpdateHighlights), object: nil)
         perform(#selector(debouncedUpdateHighlights), with: nil, afterDelay: 0.03)
+    }
+    
+    /// Update viewport for markdown rendering (debounced)
+    @objc private func debouncedUpdateViewport() {
+        updateMarkdownViewport()
+    }
+    
+    /// Notify MarkdownTextStorage about visible range for viewport-based rendering
+    private func updateMarkdownViewport() {
+        guard let layoutManager = layoutManager,
+              let textContainer = textContainer,
+              let textStorage = textStorage as? MarkdownTextStorage else { return }
+        
+        let visibleRect = self.visibleRect
+        guard visibleRect.height > 0 else { return }
+        
+        // Get visible character range
+        let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+        let visibleCharRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        
+        // Notify text storage about visible range
+        textStorage.updateVisibleRange(visibleCharRange)
     }
     
     @objc private func debouncedUpdateHighlights() {
