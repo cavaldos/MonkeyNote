@@ -279,6 +279,9 @@ private class ThickCursorTextView: NSTextView {
     // Selection toolbar
     private var selectionToolbarController = SelectionToolbarController.shared
     
+    // Flag to track if selection is from search navigation
+    private var isNavigatingSearch: Bool = false
+    
     deinit {
         stopBlinkTimer()
     }
@@ -477,8 +480,14 @@ private class ThickCursorTextView: NSTextView {
         
         let matchRange = searchMatchRanges[index]
         
+        // Set flag before selecting to prevent toolbar from showing
+        isNavigatingSearch = true
+        
         // Select the match
         setSelectedRange(matchRange)
+        
+        // Reset flag
+        isNavigatingSearch = false
         
         // Scroll to make it visible
         scrollRangeToVisible(matchRange)
@@ -1016,8 +1025,8 @@ private class ThickCursorTextView: NSTextView {
             textStorage.cursorPosition = selectedRange.location
         }
         
-        // Show selection toolbar when there's a selection
-        if selectedRange.length > 0 {
+        // Show selection toolbar when there's a selection (but not during search navigation)
+        if selectedRange.length > 0 && !isNavigatingSearch {
             showSelectionToolbar(for: selectedRange)
         } else {
             selectionToolbarController.dismiss()
