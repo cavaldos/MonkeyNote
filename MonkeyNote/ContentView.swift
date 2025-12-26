@@ -32,6 +32,12 @@ func triggerHaptic(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .generic
 }
 #endif
 
+// MARK: - Save Status Enum
+enum SaveStatus: Equatable {
+    case idle
+    case saving
+}
+
 // MARK: - Notifications
 extension Notification.Name {
     static let focusSearch = Notification.Name("focusSearch")
@@ -145,8 +151,10 @@ struct ContentView: View {
     @State private var trashItems: [TrashItem] = []
     @State private var showTrash: Bool = false
     
-    // Debounce save
+    // Save delay status
+    @State private var saveStatus: SaveStatus = .idle
     @State private var saveTask: Task<Void, Never>?
+    private let saveDelay: TimeInterval = 10.0
     
     // Drag & Drop state
     @State private var dragOverFolderID: NoteFolder.ID?
@@ -206,7 +214,7 @@ struct ContentView: View {
             },
             set: { newValue in
                 guard let selectedFolderID = selectedFolderID, let selectedNoteID = selectedNoteID else { return }
-                
+
                 // Update in-memory immediately
                 updateFolder(folderID: selectedFolderID) { folder in
                     guard let noteIndex = folder.notes.firstIndex(where: { $0.id == selectedNoteID }) else { return }
@@ -221,15 +229,18 @@ struct ContentView: View {
                         }
                     }
                 }
-                
-                // Debounced save to disk (500ms delay)
+
+                // Cancel any existing save task and start new save with delay
                 saveTask?.cancel()
+                saveStatus = .saving
+
                 saveTask = Task {
-                    try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
+                    try? await Task.sleep(nanoseconds: UInt64(saveDelay * 1_000_000_000))
                     guard !Task.isCancelled else { return }
-                    
+
                     await MainActor.run {
                         saveAllToDisk()
+                        saveStatus = .idle
                     }
                 }
             }
@@ -295,7 +306,8 @@ struct ContentView: View {
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onDisappear {
-            // Save when view disappears
+            // Cancel pending save task and save immediately when view disappears
+            saveTask?.cancel()
             saveAllToDisk()
         }
     }
@@ -316,9 +328,16 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text(selectedNoteTitle)
-            Circle()
-                .fill(Color.red)
-                .frame(width: 6, height: 6)
+            if saveStatus == .saving {
+                ProgressView()
+                    .scaleEffect(0.5)
+                    .controlSize(.small)
+                    .tint(.gray)
+            } else {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 6, height: 6)
+            }
         }
         .font(.system(.body, design: .monospaced))
         .foregroundStyle(isDarkMode ? .white.opacity(0.45) : .black.opacity(0.55))
