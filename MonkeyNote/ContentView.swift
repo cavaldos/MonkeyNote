@@ -137,6 +137,7 @@ struct ContentView: View {
     // Search navigation state
     @State private var searchMatchCount: Int = 0
     @State private var currentSearchIndex: Int = 0
+    @State private var isSearchComplete: Bool = true  // For showing "X+" vs "X"
 
     @State private var renameRequest: RenameRequest?
     
@@ -339,8 +340,9 @@ struct ContentView: View {
             markdownRenderEnabled: markdownRenderEnabled,
             horizontalPadding: 46,
             currentSearchIndex: currentSearchIndex,
-            onSearchMatchesChanged: { count in
+            onSearchMatchesChanged: { count, isComplete in
                 searchMatchCount = count
+                isSearchComplete = isComplete
                 // Reset index if it's out of bounds
                 if currentSearchIndex >= count {
                     currentSearchIndex = max(0, count - 1)
@@ -758,7 +760,7 @@ struct ContentView: View {
                             .transition(.opacity.combined(with: .scale(scale: 0.8))) // animation search text
                         
                         // Results count
-                        Text(searchMatchCount > 0 ? "\(currentSearchIndex + 1)/\(searchMatchCount)" : "0")
+                        Text(searchMatchCount > 0 ? "\(currentSearchIndex + 1)/\(searchMatchCount)\(isSearchComplete ? "" : "+")" : "0")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(isDarkMode ? .white.opacity(0.7) : .black.opacity(0.7))
                             .transition(.opacity.combined(with: .scale(scale: 0.8))) // animation search text

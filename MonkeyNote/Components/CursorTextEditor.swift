@@ -248,8 +248,19 @@ private class ThickCursorTextView: NSTextView {
     
     // Search navigation
     var currentSearchIndex: Int = 0
-    var onSearchMatchesChanged: ((Int) -> Void)?
-    private var searchMatchRanges: [NSRange] = []
+    var onSearchMatchesChanged: ((Int, Bool) -> Void)?  // (count, isComplete)
+    private var searchMatchRanges: [NSRange] = []  // All matches for navigation
+    
+    // Search optimization - viewport-based highlighting
+    private var allMatchRanges: [NSRange] = []  // Full list from background search
+    private var visibleHighlightedRanges: Set<Int> = []  // Indices of currently highlighted matches
+    private var searchTask: Task<Void, Never>?  // Background search task
+    private var isSearchComplete: Bool = false
+    private var lastSearchQuery: String = ""
+    private var lastVisibleRect: NSRect = .zero
+    
+    // Layer pooling for reuse
+    private var layerPool: [CALayer] = []
     
     // Disable auto-scroll to cursor when typing
     var disableAutoScroll: Bool = false
@@ -383,95 +394,244 @@ private class ThickCursorTextView: NSTextView {
         selectedRange()
     }
 
+    // MARK: - Search Highlighting (Viewport-Based Optimization)
+    
+    /// Main entry point - updates highlights based on current viewport
     func updateHighlights() {
-        self.highlightLayers.forEach { $0.removeFromSuperlayer() }
-        self.highlightLayers.removeAll()
-        self.currentMatchLayers.removeAll()  // Clear current match layers
-        self.searchMatchRanges.removeAll()
-
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // If search query changed, reset everything and start fresh
+        if query != lastSearchQuery {
+            resetSearch()
+            lastSearchQuery = query
+        }
+        
         guard !query.isEmpty, let layoutManager = layoutManager, let textContainer = textContainer else {
-            // Notify no matches when search is empty
-            onSearchMatchesChanged?(0)
+            clearAllHighlights()
+            onSearchMatchesChanged?(0, true)
             return
         }
-
+        
         let text = self.string
         guard !text.isEmpty else {
-            onSearchMatchesChanged?(0)
+            clearAllHighlights()
+            onSearchMatchesChanged?(0, true)
             return
         }
         
-        // Ensure layout is complete before calculating highlight positions
-        let fullRange = NSRange(location: 0, length: text.utf16.count)
-        layoutManager.ensureLayout(forCharacterRange: fullRange)
+        // If we don't have all matches yet, perform background search first
+        if !isSearchComplete && allMatchRanges.isEmpty {
+            performFullSearch(query: query, in: text)
+        }
         
-        // Get the text container origin offset (accounts for textContainerInset)
-        let origin = textContainerOrigin
-
+        // Update visible highlights
+        updateVisibleHighlights()
+    }
+    
+    /// Perform full document search (synchronous for small docs, stored for navigation)
+    private func performFullSearch(query: String, in text: String) {
+        searchTask?.cancel()
+        
+        allMatchRanges.removeAll()
+        searchMatchRanges.removeAll()
+        
         var searchRange = NSRange(location: 0, length: text.utf16.count)
-        var matchIndex = 0
-
+        
         while searchRange.location < text.utf16.count {
             let foundRange = (text as NSString).range(of: query, options: .caseInsensitive, range: searchRange)
-
+            
             if foundRange.location == NSNotFound {
                 break
             }
-
-            // Validate the found range
+            
             guard foundRange.location + foundRange.length <= text.utf16.count else {
                 break
             }
             
-            // Store the match range for navigation
-            searchMatchRanges.append(foundRange)
-
-            let glyphRange = layoutManager.glyphRange(forCharacterRange: foundRange, actualCharacterRange: nil)
+            allMatchRanges.append(foundRange)
             
-            // Validate glyph range
-            guard glyphRange.location != NSNotFound else {
-                searchRange.location = foundRange.location + foundRange.length
-                searchRange.length = text.utf16.count - searchRange.location
-                continue
-            }
-            
-            // Determine if this is the current match (for different highlight color)
-            let isCurrentMatch = matchIndex == currentSearchIndex
-            
-            layoutManager.enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: textContainer) { rect, _ in
-                // Skip invalid rects
-                guard rect.width > 0 && rect.height > 0 else { return }
-                
-                let highlightLayer = CALayer()
-                // Add padding to highlight rect || color for current match
-                let padding: CGFloat = isCurrentMatch ? 2.5 : 1.2   // size of padding
-                let paddedRect = rect.insetBy(dx: -padding, dy: -padding)
-                
-                // Use different color for current match
-                if isCurrentMatch {
-                    // Màu cam đậm hơn, nổi bật hơn
-                    highlightLayer.backgroundColor = NSColor.orange.withAlphaComponent(0.6).cgColor
-                    highlightLayer.borderWidth = 1.5
-                    highlightLayer.borderColor = NSColor.orange.withAlphaComponent(0.8).cgColor
-                    self.currentMatchLayers.append(highlightLayer)  // Track current match layer
-                } else {
-                    highlightLayer.backgroundColor = NSColor.yellow.withAlphaComponent(0.3).cgColor
-                }
-                highlightLayer.cornerRadius = 3
-                // Offset the rect by textContainerOrigin to get correct position in view
-                highlightLayer.frame = paddedRect.offsetBy(dx: origin.x, dy: origin.y)
-                self.layer?.addSublayer(highlightLayer)
-                self.highlightLayers.append(highlightLayer)
-            }
-
-            matchIndex += 1
             searchRange.location = foundRange.location + foundRange.length
             searchRange.length = text.utf16.count - searchRange.location
         }
         
-        // Notify about total matches count
-        onSearchMatchesChanged?(searchMatchRanges.count)
+        // Copy to searchMatchRanges for navigation
+        searchMatchRanges = allMatchRanges
+        isSearchComplete = true
+        
+        // Notify with final count
+        onSearchMatchesChanged?(allMatchRanges.count, true)
+    }
+    
+    /// Update highlights only for matches visible in viewport
+    private func updateVisibleHighlights() {
+        guard let layoutManager = layoutManager, let textContainer = textContainer else { return }
+        
+        let visibleRect = self.visibleRect
+        
+        // Skip if viewport hasn't changed significantly
+        if abs(visibleRect.origin.y - lastVisibleRect.origin.y) < 10 &&
+           abs(visibleRect.size.height - lastVisibleRect.size.height) < 10 &&
+           !highlightLayers.isEmpty {
+            // Just update current match highlighting
+            updateCurrentMatchHighlight()
+            return
+        }
+        lastVisibleRect = visibleRect
+        
+        // Recycle existing layers
+        recycleAllHighlightLayers()
+        
+        // Get visible character range with buffer
+        let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+        let visibleCharRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        
+        // Add buffer (half screen above and below)
+        let bufferSize = visibleCharRange.length / 2
+        let extendedStart = max(0, visibleCharRange.location - bufferSize)
+        let extendedEnd = min(self.string.utf16.count, visibleCharRange.location + visibleCharRange.length + bufferSize)
+        let extendedRange = NSRange(location: extendedStart, length: extendedEnd - extendedStart)
+        
+        // Ensure layout only for extended visible range
+        layoutManager.ensureLayout(forCharacterRange: extendedRange)
+        
+        let origin = textContainerOrigin
+        visibleHighlightedRanges.removeAll()
+        
+        // Only create layers for matches within extended visible range
+        for (index, matchRange) in allMatchRanges.enumerated() {
+            // Check if match overlaps with extended visible range
+            let matchEnd = matchRange.location + matchRange.length
+            let extendedEnd = extendedRange.location + extendedRange.length
+            
+            guard matchRange.location < extendedEnd && matchEnd > extendedRange.location else {
+                continue
+            }
+            
+            visibleHighlightedRanges.insert(index)
+            
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: matchRange, actualCharacterRange: nil)
+            guard glyphRange.location != NSNotFound else { continue }
+            
+            let isCurrentMatch = index == currentSearchIndex
+            
+            layoutManager.enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: textContainer) { rect, _ in
+                guard rect.width > 0 && rect.height > 0 else { return }
+                
+                let highlightLayer = self.reuseOrCreateLayer()
+                let padding: CGFloat = isCurrentMatch ? 2.5 : 1.2
+                let paddedRect = rect.insetBy(dx: -padding, dy: -padding)
+                
+                // Configure layer appearance
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                
+                if isCurrentMatch {
+                    highlightLayer.backgroundColor = NSColor.orange.withAlphaComponent(0.6).cgColor
+                    highlightLayer.borderWidth = 1.5
+                    highlightLayer.borderColor = NSColor.orange.withAlphaComponent(0.8).cgColor
+                    self.currentMatchLayers.append(highlightLayer)
+                } else {
+                    highlightLayer.backgroundColor = NSColor.yellow.withAlphaComponent(0.3).cgColor
+                    highlightLayer.borderWidth = 0
+                    highlightLayer.borderColor = nil
+                }
+                highlightLayer.cornerRadius = 3
+                highlightLayer.frame = paddedRect.offsetBy(dx: origin.x, dy: origin.y)
+                
+                CATransaction.commit()
+                
+                self.layer?.addSublayer(highlightLayer)
+                self.highlightLayers.append(highlightLayer)
+            }
+        }
+    }
+    
+    /// Update only the current match highlight (for navigation without full redraw)
+    private func updateCurrentMatchHighlight() {
+        // Clear previous current match styling
+        for layer in currentMatchLayers {
+            layer.backgroundColor = NSColor.yellow.withAlphaComponent(0.3).cgColor
+            layer.borderWidth = 0
+            layer.borderColor = nil
+        }
+        currentMatchLayers.removeAll()
+        
+        // Find and update current match layer if visible
+        guard currentSearchIndex < allMatchRanges.count,
+              visibleHighlightedRanges.contains(currentSearchIndex),
+              let layoutManager = layoutManager,
+              let textContainer = textContainer else { return }
+        
+        let matchRange = allMatchRanges[currentSearchIndex]
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: matchRange, actualCharacterRange: nil)
+        guard glyphRange.location != NSNotFound else { return }
+        
+        let origin = textContainerOrigin
+        
+        layoutManager.enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: textContainer) { rect, _ in
+            guard rect.width > 0 && rect.height > 0 else { return }
+            
+            // Find existing layer at this position or create new one
+            let padding: CGFloat = 2.5
+            let paddedRect = rect.insetBy(dx: -padding, dy: -padding)
+            let targetFrame = paddedRect.offsetBy(dx: origin.x, dy: origin.y)
+            
+            // Look for existing layer at this position
+            for layer in self.highlightLayers {
+                if layer.frame.intersects(targetFrame) {
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    layer.backgroundColor = NSColor.orange.withAlphaComponent(0.6).cgColor
+                    layer.borderWidth = 1.5
+                    layer.borderColor = NSColor.orange.withAlphaComponent(0.8).cgColor
+                    layer.frame = targetFrame
+                    CATransaction.commit()
+                    self.currentMatchLayers.append(layer)
+                    return
+                }
+            }
+        }
+    }
+    
+    /// Clear all highlights and reset state
+    private func clearAllHighlights() {
+        recycleAllHighlightLayers()
+        allMatchRanges.removeAll()
+        searchMatchRanges.removeAll()
+        visibleHighlightedRanges.removeAll()
+        isSearchComplete = false
+    }
+    
+    /// Reset search state (called when query changes)
+    private func resetSearch() {
+        searchTask?.cancel()
+        clearAllHighlights()
+        lastVisibleRect = .zero
+    }
+    
+    // MARK: - Layer Pooling
+    
+    /// Get a layer from pool or create new one
+    private func reuseOrCreateLayer() -> CALayer {
+        if let layer = layerPool.popLast() {
+            return layer
+        }
+        return CALayer()
+    }
+    
+    /// Recycle all highlight layers back to pool
+    private func recycleAllHighlightLayers() {
+        for layer in highlightLayers {
+            layer.removeFromSuperlayer()
+            layerPool.append(layer)
+        }
+        highlightLayers.removeAll()
+        currentMatchLayers.removeAll()
+        
+        // Limit pool size to prevent memory bloat
+        if layerPool.count > 200 {
+            layerPool.removeFirst(layerPool.count - 200)
+        }
     }
     
     // Navigate to a specific search match by index
@@ -1196,6 +1356,16 @@ private class ThickCursorTextView: NSTextView {
     
     override func layout() {
         super.layout()
+        
+        // Only update if search is active
+        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        
+        // Debounce scroll updates to prevent excessive redraws
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(debouncedUpdateHighlights), object: nil)
+        perform(#selector(debouncedUpdateHighlights), with: nil, afterDelay: 0.03)
+    }
+    
+    @objc private func debouncedUpdateHighlights() {
         updateHighlights()
     }
     
@@ -1233,7 +1403,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     
     // Search navigation
     var currentSearchIndex: Int = 0
-    var onSearchMatchesChanged: ((Int) -> Void)? = nil  // Reports total matches count
+    var onSearchMatchesChanged: ((Int, Bool) -> Void)? = nil  // Reports (count, isComplete)
     var onNavigateToMatch: ((Int) -> Void)? = nil  // Called when should navigate to specific match
 
     func makeCoordinator() -> Coordinator {
