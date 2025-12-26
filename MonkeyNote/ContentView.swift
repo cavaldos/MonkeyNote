@@ -97,6 +97,9 @@ struct ContentView: View {
     // Drag & Drop state
     @State private var dragOverFolderID: NoteFolder.ID?
     
+    // Hover state for folder menu
+    @State private var hoverFolderID: NoteFolder.ID?
+    
     // Search focus
     @FocusState private var isSearchFocused: Bool
 
@@ -420,17 +423,55 @@ struct ContentView: View {
         HStack {
             Label(folder.name, systemImage: "folder")
             Spacer()
+            
+            // Menu button - only visible on hover
+            if hoverFolderID == folder.id {
+                Menu {
+                    Button {
+                        addSubfolder(parentFolderID: folder.id)
+                    } label: {
+                        Label("New Folder", systemImage: "folder.badge.plus")
+                    }
+                    
+                    Button {
+                        startRenameFolder(folderID: folder.id)
+                    } label: {
+                        Label("Rename Folder", systemImage: "pencil")
+                    }
+                    
+                    Divider()
+                    
+                    Button(role: .destructive) {
+                        deleteFolder(folderID: folder.id)
+                    } label: {
+                        Label("Delete Folder", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle.fill")
+                        .foregroundStyle(.gray)
+                        .font(.system(size: 14))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+            }
+            
             Text("\(folder.notes.count)")
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(dragOverFolderID == folder.id ? Color.accentColor.opacity(0.3) : Color.clear)
+            RoundedRectangle(cornerRadius: 4)
+                .fill(dragOverFolderID == folder.id ? Color.accentColor.opacity(0.5) : Color.clear)
         )
         .contentShape(Rectangle())
+        .onHover { isHovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                hoverFolderID = isHovering ? folder.id : nil
+            }
+        }
         .tag(folder.id)
         .draggable(folder.id.uuidString)
         .dropDestination(for: String.self) { items, location in
@@ -443,6 +484,7 @@ struct ContentView: View {
                 dragOverFolderID = isTargeted ? folder.id : nil
             }
         }
+        .listRowInsets(EdgeInsets(top: 2, leading: 1, bottom: 2, trailing: 1))
         .contextMenu {
             Button {
                 addSubfolder(parentFolderID: folder.id)
