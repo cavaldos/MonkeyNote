@@ -16,6 +16,10 @@ class VaultManager: ObservableObject {
     private let userDefaults = UserDefaults.standard
     private let structureFileName = ".vault-structure.json"
     
+    // MARK: - Large File Protection
+    /// Maximum allowed lines for a note file (files exceeding this will not be opened) //crash
+    static let maxAllowedLines: Int = 5_000
+    
     init() {
         setupVault()
     }
@@ -247,7 +251,18 @@ class VaultManager: ObservableObject {
                 let fileURL = folderURL.appendingPathComponent(fileName)
                 
                 if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
-                    note.text = content
+                    let lineCount = content.components(separatedBy: .newlines).count
+                    
+                    // Check if file exceeds maximum allowed lines
+                    if lineCount > VaultManager.maxAllowedLines {
+                        note.text = ""
+                        note.isTooLarge = true
+                        note.lineCount = lineCount
+                    } else {
+                        note.text = content
+                        note.isTooLarge = false
+                        note.lineCount = lineCount
+                    }
                 }
                 updatedNotes.append(note)
             }
@@ -315,9 +330,32 @@ class VaultManager: ObservableObject {
                 do {
                     let content = try String(contentsOf: file, encoding: .utf8)
                     let title = file.deletingPathExtension().lastPathComponent
-                    let note = NoteItem(title: title, text: content, savedTitle: title)
-                    notes.append(note)
-                    print("📄 Loaded note: \(title)")
+                    let lineCount = content.components(separatedBy: .newlines).count
+                    
+                    // Check if file exceeds maximum allowed lines
+                    if lineCount > VaultManager.maxAllowedLines {
+                        // File too large - create note without content
+                        let note = NoteItem(
+                            title: title,
+                            text: "",
+                            savedTitle: title,
+                            isTooLarge: true,
+                            lineCount: lineCount
+                        )
+                        notes.append(note)
+                        print("⚠️ Note too large (\(lineCount) lines): \(title)")
+                    } else {
+                        // Normal file - load content
+                        let note = NoteItem(
+                            title: title,
+                            text: content,
+                            savedTitle: title,
+                            isTooLarge: false,
+                            lineCount: lineCount
+                        )
+                        notes.append(note)
+                        print("📄 Loaded note: \(title)")
+                    }
                 } catch {
                     print("❌ Failed to read \(file.lastPathComponent): \(error)")
                 }

@@ -156,6 +156,10 @@ struct ContentView: View {
     
     // Search focus
     @FocusState private var isSearchFocused: Bool
+    
+    // Large file alert state
+    @State private var showLargeFileAlert: Bool = false
+    @State private var largeFileInfo: (name: String, lines: Int)?
 
     @AppStorage("note.fontFamily") private var fontFamily: String = "monospaced"
     @AppStorage("note.fontSize") private var fontSize: Double = 28
@@ -620,16 +624,47 @@ struct ContentView: View {
             background
 
             if let folderID = selectedFolderID, let folder = getFolder(folderID: folderID) {
-                List(selection: $selectedNoteID) {
+                List(selection: Binding(
+                    get: { selectedNoteID },
+                    set: { newValue in
+                        // Check if trying to select a large file
+                        if let noteID = newValue,
+                           let note = folder.notes.first(where: { $0.id == noteID }),
+                           note.isTooLarge {
+                            // Block selection - show alert
+                            largeFileInfo = (note.title, note.lineCount)
+                            showLargeFileAlert = true
+                            return
+                        }
+                        selectedNoteID = newValue
+                    }
+                )) {
                     ForEach(filteredNotes(in: folder)) { note in
-                        VStack(alignment: .leading, spacing: 4) {
-                            highlightedText(note.title, searchText: searchText)
-                                .font(.system(.body, design: .monospaced))
-                                .lineLimit(1)
-                            highlightedText(notePreview(for: note.text), searchText: searchText)
-                                .font(.system(.footnote, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                highlightedText(note.title, searchText: searchText)
+                                    .font(.system(.body, design: .monospaced))
+                                    .lineLimit(1)
+                                highlightedText(notePreview(for: note.text), searchText: searchText)
+                                    .font(.system(.footnote, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            
+                            Spacer()
+                            
+                            // Warning indicator for large files
+                            if note.isTooLarge {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(.orange)
+                                        .font(.system(size: 12))
+                                    Text("\(note.lineCount) lines")
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.orange)
+                                }
+                                .help("File too large to open (max \(VaultManager.maxAllowedLines) lines)")
+                            }
                         }
                         .padding(.vertical, 4)
                         .tag(note.id)
@@ -667,6 +702,13 @@ struct ContentView: View {
                     Image(systemName: "square.and.pencil")
                 }
                 .disabled(selectedFolderID == nil)
+            }
+        }
+        .alert("File Too Large", isPresented: $showLargeFileAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            if let info = largeFileInfo {
+                Text("\"\(info.name)\" has \(info.lines) lines.\nMaximum allowed: \(VaultManager.maxAllowedLines) lines.")
             }
         }
     }
