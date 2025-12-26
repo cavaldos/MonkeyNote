@@ -692,7 +692,7 @@ struct ContentView: View {
                 }
                 .disabled(selectedNoteID == nil)
                 
-                // Search field with results and navigation
+                // Search field with results and navigation && search results
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
@@ -703,7 +703,7 @@ struct ContentView: View {
                         onSubmit: { navigateToNextMatch() },
                         onEscape: { closeSearch() }
                     )
-                    .frame(width: 80)
+                    .frame(width: 120) // width search
                     #else
                     TextField("Search", text: $searchText)
                         .textFieldStyle(.plain)
@@ -717,16 +717,19 @@ struct ContentView: View {
                         Text("⏎")
                             .font(.system(size: 9))
                             .foregroundStyle(.secondary)
+                            .transition(.opacity.combined(with: .scale(scale: 0.8)))// animation search text
                         
                         // Divider
                         Rectangle()
                             .fill(isDarkMode ? Color.white.opacity(0.2) : Color.black.opacity(0.15))
                             .frame(width: 1, height: 14)
+                            .transition(.opacity.combined(with: .scale(scale: 0.8))) // animation search text
                         
                         // Results count
                         Text(searchMatchCount > 0 ? "\(currentSearchIndex + 1)/\(searchMatchCount)" : "0")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(isDarkMode ? .white.opacity(0.7) : .black.opacity(0.7))
+                            .transition(.opacity.combined(with: .scale(scale: 0.8))) // animation search text
                         
                         // Navigation buttons
                         Button {
@@ -743,6 +746,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(searchMatchCount == 0)
+                        .transition(.opacity.combined(with: .move(edge: .trailing))) // animation search text
                         
                         Button {
                             navigateToNextMatch()
@@ -758,6 +762,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(searchMatchCount == 0)
+                        .transition(.opacity.combined(with: .move(edge: .trailing))) // animation search text
                         
                         // Close button
                         Button {
@@ -773,6 +778,7 @@ struct ContentView: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .transition(.opacity.combined(with: .move(edge: .trailing))) // animation search text
                     }
                 }
                 .padding(.horizontal, 8)
@@ -781,6 +787,7 @@ struct ContentView: View {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
                 )
+                .animation(.spring(response: 0.20, dampingFraction: 0.5), value: searchText.isEmpty)// animation search text
             }
         }
     }
