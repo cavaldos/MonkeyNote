@@ -245,6 +245,13 @@ private class ThickCursorTextView: NSTextView {
     var autocompleteDelay: Double = 0.0
     var autocompleteOpacity: Double = 0.5
     var suggestionMode: String = "word"  // "word" or "sentence"
+    
+    // Disable auto-scroll to cursor when typing
+    var disableAutoScroll: Bool = false
+    
+    // Track if we're currently scrolling to prevent multiple scroll calls
+    private var isScrolling: Bool = false
+    
     private var cursorLayer: CALayer?
     private var lastCursorRect: NSRect = .zero
     private var highlightLayers: [CALayer] = []
@@ -1077,6 +1084,20 @@ private class ThickCursorTextView: NSTextView {
     override func layout() {
         super.layout()
         updateHighlights()
+    }
+    
+    // Override to prevent flickering when scrolling to cursor
+    override func scrollRangeToVisible(_ range: NSRange) {
+        // Prevent multiple rapid scroll calls that cause flickering
+        guard !isScrolling else { return }
+        
+        isScrolling = true
+        super.scrollRangeToVisible(range)
+        
+        // Reset flag after a short delay to batch scroll requests
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.isScrolling = false
+        }
     }
 }
 
