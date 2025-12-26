@@ -8,6 +8,30 @@
 import SwiftUI
 import Combine
 
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
+
+// MARK: - Haptic Feedback Helper
+#if os(iOS)
+func triggerHaptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .light) {
+    let generator = UIImpactFeedbackGenerator(style: style)
+    generator.impactOccurred()
+}
+
+func triggerNotificationHaptic(_ type: UINotificationFeedbackGenerator.FeedbackType) {
+    let generator = UINotificationFeedbackGenerator()
+    generator.notificationOccurred(type)
+}
+
+#elseif os(macOS)
+func triggerHaptic(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .generic) {
+    NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .default)
+}
+#endif
+
 // MARK: - Notifications
 extension Notification.Name {
     static let focusSearch = Notification.Name("focusSearch")
@@ -357,11 +381,13 @@ struct ContentView: View {
     private func navigateToNextMatch() {
         guard searchMatchCount > 0 else { return }
         currentSearchIndex = (currentSearchIndex + 1) % searchMatchCount
+        triggerHaptic() // Haptic feedback
     }
     
     private func navigateToPreviousMatch() {
         guard searchMatchCount > 0 else { return }
         currentSearchIndex = (currentSearchIndex - 1 + searchMatchCount) % searchMatchCount
+        triggerHaptic() // Haptic feedback
     }
     
     private func closeSearch() {

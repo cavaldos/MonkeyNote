@@ -260,6 +260,7 @@ private class ThickCursorTextView: NSTextView {
     private var cursorLayer: CALayer?
     private var lastCursorRect: NSRect = .zero
     private var highlightLayers: [CALayer] = []
+    private var currentMatchLayers: [CALayer] = []  // Track current match layers for shake animation
     
     // Cursor blinking timer
     private var blinkTimer: Timer?
@@ -382,6 +383,7 @@ private class ThickCursorTextView: NSTextView {
     func updateHighlights() {
         self.highlightLayers.forEach { $0.removeFromSuperlayer() }
         self.highlightLayers.removeAll()
+        self.currentMatchLayers.removeAll()  // Clear current match layers
         self.searchMatchRanges.removeAll()
 
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -439,15 +441,23 @@ private class ThickCursorTextView: NSTextView {
                 guard rect.width > 0 && rect.height > 0 else { return }
                 
                 let highlightLayer = CALayer()
+                // Add padding to highlight rect || color for current match
+                let padding: CGFloat = isCurrentMatch ? 2.5 : 1.2   // size of padding
+                let paddedRect = rect.insetBy(dx: -padding, dy: -padding)
+                
                 // Use different color for current match
                 if isCurrentMatch {
-                    highlightLayer.backgroundColor = NSColor.orange.withAlphaComponent(0.5).cgColor
+                    // Màu cam đậm hơn, nổi bật hơn
+                    highlightLayer.backgroundColor = NSColor.orange.withAlphaComponent(0.6).cgColor
+                    highlightLayer.borderWidth = 1.5
+                    highlightLayer.borderColor = NSColor.orange.withAlphaComponent(0.8).cgColor
+                    self.currentMatchLayers.append(highlightLayer)  // Track current match layer
                 } else {
                     highlightLayer.backgroundColor = NSColor.yellow.withAlphaComponent(0.3).cgColor
                 }
-                highlightLayer.cornerRadius = 2
+                highlightLayer.cornerRadius = 3
                 // Offset the rect by textContainerOrigin to get correct position in view
-                highlightLayer.frame = rect.offsetBy(dx: origin.x, dy: origin.y)
+                highlightLayer.frame = paddedRect.offsetBy(dx: origin.x, dy: origin.y)
                 self.layer?.addSublayer(highlightLayer)
                 self.highlightLayers.append(highlightLayer)
             }
@@ -476,6 +486,32 @@ private class ThickCursorTextView: NSTextView {
         // Update highlights to show new current match
         currentSearchIndex = index
         updateHighlights()
+        
+        // Apply pulse animation to current match highlight
+        pulseCurrentMatchHighlight()
+    }
+    
+    // MARK: - Pulse Animation for Current Match (Scale up then back)
+    private func pulseCurrentMatchHighlight() {
+        // Apply pulse animation only to current match layers (orange ones)
+        for layer in currentMatchLayers {
+            // Set anchor point to center for proper scaling
+            let bounds = layer.bounds
+            layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            layer.position = CGPoint(x: layer.frame.midX, y: layer.frame.midY)
+            layer.bounds = bounds
+            
+            let scaleAnimation = CAKeyframeAnimation(keyPath: "transform.scale")
+            scaleAnimation.values = [1.0, 1.2, 1.0]  // Normal → Scale up → Back to normal
+            scaleAnimation.keyTimes = [0, 0.2, 0.4]
+            scaleAnimation.timingFunctions = [
+                CAMediaTimingFunction(name: .easeOut),      // Scale up quickly
+                CAMediaTimingFunction(name: .easeInEaseOut) // Scale back smoothly
+            ]
+            scaleAnimation.duration = 0.25
+            scaleAnimation.isRemovedOnCompletion = true
+            layer.add(scaleAnimation, forKey: "pulse")
+        }
     }
     
     // MARK: - Autocomplete Ghost Text
