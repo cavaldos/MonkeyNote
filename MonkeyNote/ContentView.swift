@@ -135,6 +135,8 @@ struct ContentView: View {
         return folder.notes[noteIndex].title
     }
 
+    // MARK: - Note Text Binding & Updates
+    
     private var selectedNoteTextBinding: Binding<String> {
         Binding(
             get: {
@@ -185,6 +187,8 @@ struct ContentView: View {
         selectedNoteTextBinding.wrappedValue
     }
 
+    // MARK: - Statistics Calculations
+    
     private var wordCount: Int {
         selectedNoteText
             .split(whereSeparator: { $0.isWhitespace || $0.isNewline })
@@ -236,6 +240,8 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - UI Components
+    
     private var background: some View {
         Group {
             if isDarkMode {
@@ -329,6 +335,8 @@ struct ContentView: View {
         )
     }
 
+    // MARK: - Sidebar Navigation
+    
     private var sidebar: some View {
         ZStack {
             sidebarBackground
@@ -421,6 +429,8 @@ struct ContentView: View {
         }
     }
     
+    // MARK: - Folder Display
+    
     /// Folder row with drag & drop support
     @ViewBuilder
     private func folderRow(folder: NoteFolder) -> some View {
@@ -510,6 +520,8 @@ struct ContentView: View {
         }
     }
     
+    // MARK: - Notes List & Trash
+    
     private func refreshTrash() {
         trashItems = vaultManager.scanTrash(currentFolders: folders)
     }
@@ -570,6 +582,8 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Detail Editor
+    
     private var detailEditor: some View {
         ZStack {
             background
@@ -649,17 +663,19 @@ struct ContentView: View {
     }
 
     private var sidebarBackground: some View {
-#if os(macOS)
+    #if os(macOS)
         VisualEffectBlur(material: .sidebar, blendingMode: .behindWindow)
             .overlay(
                 (isDarkMode ? Color.black.opacity(0.10) : Color.white.opacity(0.10))
             )
             .ignoresSafeArea()
-#else
+    #else
         background
-#endif
+    #endif
     }
 
+    // MARK: - Folder Operations (Create, Rename, Delete)
+    
     private func ensureInitialSelection() {
         if folders.isEmpty {
             // Create default folder if none exists
@@ -738,6 +754,8 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Note Operations (Create, Rename, Delete)
+    
     private func addNote() {
         guard let selectedFolderID = selectedFolderID,
               let folder = getFolder(folderID: selectedFolderID) else { return }
@@ -778,6 +796,8 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Search & Filter
+    
     private func filteredNotes(in folder: NoteFolder) -> [NoteItem] {
         let notes = folder.notes
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -844,6 +864,8 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Text Processing Helpers
+    
     private func firstLineTitle(from text: String) -> String {
         let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
         let trimmed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -877,6 +899,8 @@ struct ContentView: View {
         return singleLine.isEmpty ? "" : singleLine
     }
 
+    // MARK: - Folder Tree Navigation Helpers
+    
     private func firstFolderID(in folders: [NoteFolder]) -> NoteFolder.ID? {
         for folder in folders {
             return folder.id
@@ -1006,7 +1030,7 @@ struct ContentView: View {
         return name
     }
     
-    // MARK: - Note Name Helpers
+    // MARK: - Note Title Uniqueness Helpers
     
     /// Check if a note title already exists in a list of notes
     private func noteTitleExists(_ title: String, in noteList: [NoteItem], excludingNoteID: NoteItem.ID? = nil) -> Bool {
@@ -1044,7 +1068,7 @@ struct ContentView: View {
         #endif
     }
     
-    // MARK: - Drag & Drop Helpers
+    // MARK: - Drag & Drop Utilities
     
     /// Kiểm tra xem một UUID có thuộc về note không (không phải folder)
     private func isNoteID(_ id: UUID) -> Bool {
@@ -1308,6 +1332,8 @@ struct ContentView: View {
         return false
     }
 
+    // MARK: - Text Highlighting
+    
     private func highlightedText(_ text: String, searchText: String) -> Text {
         guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return Text(text)
@@ -1335,6 +1361,8 @@ struct ContentView: View {
 
         return result
     }
+    
+    // MARK: - Data Loading
     
     /// Load folder structure from vault
     private func loadFromVault() {
