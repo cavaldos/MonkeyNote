@@ -382,6 +382,15 @@ private class ThickCursorTextView: NSTextView {
         guard !query.isEmpty, let layoutManager = layoutManager, let textContainer = textContainer else { return }
 
         let text = self.string
+        guard !text.isEmpty else { return }
+        
+        // Ensure layout is complete before calculating highlight positions
+        let fullRange = NSRange(location: 0, length: text.utf16.count)
+        layoutManager.ensureLayout(forCharacterRange: fullRange)
+        
+        // Get the text container origin offset (accounts for textContainerInset)
+        let origin = textContainerOrigin
+
         var searchRange = NSRange(location: 0, length: text.utf16.count)
 
         while searchRange.location < text.utf16.count {
@@ -391,12 +400,29 @@ private class ThickCursorTextView: NSTextView {
                 break
             }
 
+            // Validate the found range
+            guard foundRange.location + foundRange.length <= text.utf16.count else {
+                break
+            }
+
             let glyphRange = layoutManager.glyphRange(forCharacterRange: foundRange, actualCharacterRange: nil)
-            layoutManager.enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: glyphRange, in: textContainer) { rect, _ in
+            
+            // Validate glyph range
+            guard glyphRange.location != NSNotFound else {
+                searchRange.location = foundRange.location + foundRange.length
+                searchRange.length = text.utf16.count - searchRange.location
+                continue
+            }
+            
+            layoutManager.enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: textContainer) { rect, _ in
+                // Skip invalid rects
+                guard rect.width > 0 && rect.height > 0 else { return }
+                
                 let highlightLayer = CALayer()
                 highlightLayer.backgroundColor = NSColor.yellow.withAlphaComponent(0.3).cgColor
                 highlightLayer.cornerRadius = 2
-                highlightLayer.frame = rect
+                // Offset the rect by textContainerOrigin to get correct position in view
+                highlightLayer.frame = rect.offsetBy(dx: origin.x, dy: origin.y)
                 self.layer?.addSublayer(highlightLayer)
                 self.highlightLayers.append(highlightLayer)
             }
