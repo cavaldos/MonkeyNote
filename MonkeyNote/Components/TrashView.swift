@@ -37,8 +37,10 @@ struct TrashView: View {
                     }
                 }
         } detail: {
-            // Detail - Content preview
-            detailView
+            // Detail - Content preview (only show when trash is not empty)
+            if !trashItems.isEmpty {
+                detailView
+            }
         }
         .alert("Empty Trash?", isPresented: $showEmptyConfirmation) {
             Button("Cancel", role: .cancel) { }

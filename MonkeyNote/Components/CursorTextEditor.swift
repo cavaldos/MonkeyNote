@@ -1094,6 +1094,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     var autocompleteDelay: Double
     var autocompleteOpacity: Double
     var suggestionMode: String
+    var markdownRenderEnabled: Bool = true
     var horizontalPadding: CGFloat = 0
 
     func makeCoordinator() -> Coordinator {
@@ -1164,6 +1165,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textStorage.baseTextColor = isDarkMode
             ? NSColor.white.withAlphaComponent(0.92)
             : NSColor.black.withAlphaComponent(0.92)
+        textStorage.markdownRenderEnabled = markdownRenderEnabled
         
         textView.textColor = isDarkMode
             ? NSColor.white.withAlphaComponent(0.92)
@@ -1245,9 +1247,10 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         
         // Update MarkdownTextStorage settings
         if let textStorage = textView.textStorage as? MarkdownTextStorage {
-            let needsReprocess = textStorage.baseFont != font || textStorage.baseTextColor != textColor
+            let needsReprocess = textStorage.baseFont != font || textStorage.baseTextColor != textColor || textStorage.markdownRenderEnabled != markdownRenderEnabled
             textStorage.baseFont = font
             textStorage.baseTextColor = textColor
+            textStorage.markdownRenderEnabled = markdownRenderEnabled
             if needsReprocess {
                 textStorage.reprocessMarkdown()
             }
@@ -1271,42 +1274,6 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             // Update cursor position in MarkdownTextStorage
             if let textStorage = textView.textStorage as? MarkdownTextStorage {
                 textStorage.cursorPosition = textView.selectedRange().location
-            }
-            
-            // Auto-scroll to cursor position with smooth animation
-            guard let scrollView = textView.enclosingScrollView,
-                  let layoutManager = textView.layoutManager,
-                  let textContainer = textView.textContainer else { return }
-            
-            let selectedRange = textView.selectedRange()
-            let glyphRange = layoutManager.glyphRange(forCharacterRange: selectedRange, actualCharacterRange: nil)
-            let cursorRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-            
-            let cursorY = cursorRect.origin.y + textView.textContainerInset.height
-            let cursorHeight = max(cursorRect.height, textView.font?.pointSize ?? 16)
-            let visibleRect = scrollView.documentVisibleRect
-            let padding: CGFloat = 20
-            
-            // Check if cursor is below visible area
-            if cursorY + cursorHeight > visibleRect.maxY - padding {
-                let newY = cursorY + cursorHeight - visibleRect.height + padding
-                let targetPoint = NSPoint(x: 0, y: max(0, newY))
-                
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.15
-                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                    scrollView.contentView.animator().setBoundsOrigin(targetPoint)
-                }
-            }
-            // Check if cursor is above visible area
-            else if cursorY < visibleRect.minY + padding {
-                let targetPoint = NSPoint(x: 0, y: max(0, cursorY - padding))
-                
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.15
-                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                    scrollView.contentView.animator().setBoundsOrigin(targetPoint)
-                }
             }
         }
         

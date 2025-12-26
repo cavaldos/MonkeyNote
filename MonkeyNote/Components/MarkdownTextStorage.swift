@@ -27,6 +27,15 @@ class MarkdownTextStorage: NSTextStorage {
         }
     }
     
+    // Enable/disable markdown rendering (default: true)
+    var markdownRenderEnabled: Bool = true {
+        didSet {
+            if oldValue != markdownRenderEnabled {
+                reprocessMarkdown()
+            }
+        }
+    }
+    
     // Current cursor position - updated by text view
     var cursorPosition: Int = 0 {
         didSet {
@@ -103,6 +112,13 @@ class MarkdownTextStorage: NSTextStorage {
             .foregroundColor: baseTextColor
         ], range: fullRange)
         
+        // If markdown rendering is disabled, just use plain text styling
+        guard markdownRenderEnabled else {
+            cachedMatches = []
+            lastParsedString = string
+            return
+        }
+        
         // Parse and cache matches
         let text = string
         cachedMatches = parser.parse(text)
@@ -168,7 +184,8 @@ class MarkdownTextStorage: NSTextStorage {
     // MARK: - Update Syntax Visibility
     
     func updateSyntaxVisibility() {
-        guard !isProcessing, backingStore.length > 0 else { return }
+        // Skip syntax visibility updates if markdown rendering is disabled
+        guard markdownRenderEnabled, !isProcessing, backingStore.length > 0 else { return }
         
         isProcessing = true
         

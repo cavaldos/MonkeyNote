@@ -113,6 +113,7 @@ struct ContentView: View {
     @AppStorage("note.autocompleteDelay") private var autocompleteDelay: Double = 0.0
     @AppStorage("note.autocompleteOpacity") private var autocompleteOpacity: Double = 0.5
     @AppStorage("note.suggestionMode") private var suggestionMode: String = "word"
+    @AppStorage("note.markdownRenderEnabled") private var markdownRenderEnabled: Bool = true
 
     private var selectedFolderPath: [Int]? {
         guard let selectedFolderID = selectedFolderID else { return nil }
@@ -154,7 +155,9 @@ struct ContentView: View {
                     let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty {
                         if folder.notes[noteIndex].isTitleCustom == false {
-                            folder.notes[noteIndex].title = firstLineTitle(from: trimmed)
+                            let baseTitle = firstLineTitle(from: trimmed)
+                            let uniqueTitle = uniqueNoteTitle(baseTitle, in: folder.notes, excludingNoteID: selectedNoteID)
+                            folder.notes[noteIndex].title = uniqueTitle
                         }
                     }
                 }
@@ -272,6 +275,7 @@ struct ContentView: View {
             autocompleteDelay: autocompleteDelay,
             autocompleteOpacity: autocompleteOpacity,
             suggestionMode: suggestionMode,
+            markdownRenderEnabled: markdownRenderEnabled,
             horizontalPadding: 46
         )
         .overlay(alignment: .topLeading) {
@@ -597,6 +601,14 @@ struct ContentView: View {
                 Spacer()
             }
             ToolbarItemGroup(placement: .primaryAction) {
+                // Markdown render toggle button
+                Button {
+                    markdownRenderEnabled.toggle()
+                } label: {
+                    Image(systemName: markdownRenderEnabled ? "text.badge.checkmark" : "text.badge.xmark")
+                }
+                .help(markdownRenderEnabled ? "Disable Markdown Rendering" : "Enable Markdown Rendering")
+                
                 Button {
                     startRenameSelectedNote()
                 } label: {
@@ -714,6 +726,7 @@ struct ContentView: View {
         let wasSelected = (selectedFolderID == folderID)
         _ = removeFolder(in: &folders, folderID: folderID)
         saveAllToDisk()
+        refreshTrash()
 
         if wasSelected {
             selectedFolderID = firstFolderID(in: folders)
@@ -726,8 +739,13 @@ struct ContentView: View {
     }
 
     private func addNote() {
-        guard let selectedFolderID = selectedFolderID else { return }
-        let newNote = NoteItem(title: "New Note", text: "", savedTitle: "New Note")
+        guard let selectedFolderID = selectedFolderID,
+              let folder = getFolder(folderID: selectedFolderID) else { return }
+        
+        let baseName = "New Note"
+        let uniqueName = uniqueNoteTitle(baseName, in: folder.notes)
+        let newNote = NoteItem(title: uniqueName, text: "", savedTitle: uniqueName)
+        
         updateFolder(folderID: selectedFolderID) { folder in
             folder.notes.insert(newNote, at: 0)
         }
@@ -749,6 +767,7 @@ struct ContentView: View {
             folder.notes.remove(at: noteIndex)
         }
         saveAllToDisk()
+        refreshTrash()
 
         if wasSelected {
             if let folder = getFolder(folderID: selectedFolderID) {
@@ -812,9 +831,12 @@ struct ContentView: View {
             saveAllToDisk()
 
         case .note(let folderID, let noteID):
+            guard let folder = getFolder(folderID: folderID) else { return }
+            let finalTitle = uniqueNoteTitle(String(trimmed.prefix(80)), in: folder.notes, excludingNoteID: noteID)
+            
             updateFolder(folderID: folderID) { folder in
                 guard let noteIndex = folder.notes.firstIndex(where: { $0.id == noteID }) else { return }
-                folder.notes[noteIndex].title = String(trimmed.prefix(80))
+                folder.notes[noteIndex].title = finalTitle
                 folder.notes[noteIndex].isTitleCustom = true
                 folder.notes[noteIndex].updatedAt = Date()
             }
@@ -982,6 +1004,28 @@ struct ContentView: View {
         }
         
         return name
+    }
+    
+    // MARK: - Note Name Helpers
+    
+    /// Check if a note title already exists in a list of notes
+    private func noteTitleExists(_ title: String, in noteList: [NoteItem], excludingNoteID: NoteItem.ID? = nil) -> Bool {
+        return noteList.contains { note in
+            note.title.lowercased() == title.lowercased() && note.id != excludingNoteID
+        }
+    }
+    
+    /// Generate a unique note title by appending a number if needed
+    private func uniqueNoteTitle(_ baseTitle: String, in noteList: [NoteItem], excludingNoteID: NoteItem.ID? = nil) -> String {
+        var title = baseTitle
+        var counter = 1
+        
+        while noteTitleExists(title, in: noteList, excludingNoteID: excludingNoteID) {
+            counter += 1
+            title = "\(baseTitle) \(counter)"
+        }
+        
+        return title
     }
 
     private var fontDesign: Font.Design {
