@@ -121,13 +121,6 @@ class MarkdownParser {
             for match in regexMatches {
                 guard match.range.location != NSNotFound else { continue }
                 
-                // Check if this range overlaps with existing matches
-                let overlaps = matches.contains { existing in
-                    NSIntersectionRange(existing.range, match.range).length > 0
-                }
-                
-                if overlaps { continue }
-                
                 let markdownMatch: MarkdownMatch
                 
                 switch style {
@@ -148,10 +141,59 @@ class MarkdownParser {
             }
         }
         
-        // Sort by location
-        matches.sort { $0.range.location < $1.range.location }
+        let nonOverlappingMatches = removeOverlaps(matches: matches)
         
-        return matches
+        return nonOverlappingMatches
+    }
+    
+    // MARK: - Remove Overlaps (Optimized with Local Search)
+    
+    private func removeOverlaps(matches: [MarkdownMatch]) -> [MarkdownMatch] {
+        guard !matches.isEmpty else { return [] }
+        
+        let sorted = matches.sorted { $0.range.location < $1.range.location }
+        var result: [MarkdownMatch] = []
+        
+        for match in sorted {
+            if result.isEmpty {
+                result.append(match)
+                continue
+            }
+            
+            if hasOverlap(match, with: result[result.count - 1]) {
+                continue
+            }
+            
+            var startIndex = max(0, result.count - 10)
+            var hasOverlapWithAny = false
+            
+            while startIndex < result.count {
+                if hasOverlap(match, with: result[startIndex]) {
+                    hasOverlapWithAny = true
+                    break
+                }
+                
+                let candidateEnd = result[startIndex].range.location + result[startIndex].range.length
+                if candidateEnd < match.range.location {
+                    startIndex += 1
+                } else {
+                    break
+                }
+            }
+            
+            if !hasOverlapWithAny {
+                result.append(match)
+            }
+        }
+        
+        return result
+    }
+    
+    private func hasOverlap(_ match1: MarkdownMatch, with match2: MarkdownMatch) -> Bool {
+        let end1 = match1.range.location + match1.range.length
+        let end2 = match2.range.location + match2.range.length
+        
+        return !(end1 <= match2.range.location || end2 <= match1.range.location)
     }
     
     private func parseInlineStyle(match: NSTextCheckingResult, style: MarkdownStyle, syntaxLengths: (prefix: Int, suffix: Int), in text: NSString) -> MarkdownMatch {
