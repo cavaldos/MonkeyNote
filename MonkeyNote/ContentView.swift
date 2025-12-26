@@ -443,7 +443,6 @@ struct ContentView: View {
             }
         }
         .navigationTitle(selectedFolderID == nil ? "Notes" : (getFolder(folderID: selectedFolderID!)?.name ?? "Notes"))
-        .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
         .toolbar {
             ToolbarItemGroup {
                 Button {
@@ -494,6 +493,28 @@ struct ContentView: View {
                         .padding(.top, 2)
                         .padding(.bottom, 10)
                 }
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Spacer()
+            }
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 4) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11))
+                    TextField("Search", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
+                )
+                .frame(width: 120)
             }
         }
     }
