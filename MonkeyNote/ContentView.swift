@@ -747,26 +747,30 @@ struct ContentView: View {
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 // Markdown render toggle button
-                Button {
-                    markdownRenderEnabled.toggle()
-                } label: {
-                    Image(systemName: markdownRenderEnabled ? "text.badge.checkmark" : "text.badge.xmark")
-                }
-                .help(markdownRenderEnabled ? "Disable Markdown Rendering" : "Enable Markdown Rendering")
+                ThemeIconButton(
+                    systemImage: markdownRenderEnabled ? "text.badge.checkmark" : "text.badge.xmark",
+                    isSelected: markdownRenderEnabled,
+                    action: { markdownRenderEnabled.toggle() },
+                    tooltip: markdownRenderEnabled ? "Markdown: ON (click to disable)" : "Markdown: OFF (click to enable)"
+                )
                 
-                Button {
-                    startRenameSelectedNote()
-                } label: {
-                    Image(systemName: "pencil")
-                }
+                ThemeIconButton(
+                    systemImage: "pencil",
+                    isSelected: false,
+                    action: { startRenameSelectedNote() },
+                    tooltip: "Rename note"
+                )
                 .disabled(selectedNoteID == nil)
+                .opacity(selectedNoteID == nil ? 0.5 : 1.0)
 
-                Button(role: .destructive) {
-                    deleteSelectedNote()
-                } label: {
-                    Image(systemName: "trash")
-                }
+                ThemeIconButton(
+                    systemImage: "trash",
+                    isSelected: false,
+                    action: { deleteSelectedNote() },
+                    tooltip: "Delete note"
+                )
                 .disabled(selectedNoteID == nil)
+                .opacity(selectedNoteID == nil ? 0.5 : 1.0)
                 
                 // Search field with results and navigation && search results
                 HStack(spacing: 6) {
