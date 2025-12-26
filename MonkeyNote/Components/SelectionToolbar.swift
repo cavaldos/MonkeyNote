@@ -11,7 +11,6 @@ import AppKit
 
 // MARK: - Toolbar Action
 enum ToolbarAction: String, CaseIterable {
-    case askAI = "Ask AI"
     case heading = "Aa"
     case bold = "B"
     case italic = "I"
@@ -24,7 +23,6 @@ enum ToolbarAction: String, CaseIterable {
     
     var icon: String {
         switch self {
-        case .askAI: return "sparkles"
         case .heading: return "textformat.size"
         case .bold: return "bold"
         case .italic: return "italic"
@@ -131,7 +129,7 @@ struct SelectionToolbarView: View {
     @State private var hoveredAction: ToolbarAction?
     
     private let mainActions: [ToolbarAction] = [
-        .askAI, .heading, .bold, .italic, .code, .strikethrough, .highlight, .link, .alignLeft, .list
+        .heading, .bold, .italic, .code, .strikethrough, .highlight, .link, .alignLeft, .list
     ]
     
     var body: some View {
@@ -141,16 +139,7 @@ struct SelectionToolbarView: View {
                     onAction(action)
                 } label: {
                     Group {
-                        if action == .askAI {
-                            HStack(spacing: 4) {
-                                Image(systemName: action.icon)
-                                    .font(.system(size: 12, weight: .medium))
-                                Text("Ask AI")
-                                    .font(.system(size: 12, weight: .medium))
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                        } else if action == .code {
+                        if action == .code {
                             // Special style for code - similar to image reference
                             Text("</>")
                                 .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -183,8 +172,8 @@ struct SelectionToolbarView: View {
                     hoveredAction = isHovered ? action : nil
                 }
                 
-                // Add divider after Ask AI and after highlight
-                if action == .askAI || action == .highlight || action == .link {
+                // Add divider after highlight
+                if action == .highlight || action == .link {
                     Divider()
                         .frame(height: 18)
                         .background(Color.white.opacity(0.2))

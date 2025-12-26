@@ -1114,10 +1114,6 @@ private class ThickCursorTextView: NSTextView {
         case .alignLeft:
             // Alignment is not typically supported in plain markdown
             return
-        case .askAI:
-            // TODO: Implement AI feature
-            print("Ask AI with selected text: \(selectedText)")
-            return
         }
         
         // Replace selected text with formatted text (with undo support)

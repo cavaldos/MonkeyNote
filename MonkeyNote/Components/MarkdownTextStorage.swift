@@ -52,6 +52,17 @@ class MarkdownTextStorage: NSTextStorage {
     private var cachedMatches: [MarkdownMatch] = []
     private var lastParsedString: String = ""
     
+    // MARK: - Debounce Properties
+    private var debounceTimer: Timer?
+    private let debounceDelay: TimeInterval = 0.3 // 300ms delay
+    private var pendingEditedRange: NSRange?
+    private var hasPendingFullParse: Bool = false
+    
+    // MARK: - Incremental Parsing Cache
+    // Cache matches by paragraph index for incremental updates
+    private var paragraphCache: [Int: [MarkdownMatch]] = [:]
+    private var paragraphRanges: [NSRange] = []
+    
     // MARK: - NSTextStorage Required Overrides
     
     override var string: String {
@@ -86,17 +97,150 @@ class MarkdownTextStorage: NSTextStorage {
     // MARK: - Processing
     
     override func processEditing() {
-        // Invalidate cache when text changes
-        lastParsedString = ""
+        // Store the edited range for incremental processing
+        let editedRange = self.editedRange
         
-        // Apply markdown styling to the entire document
-        if !isProcessing {
+        // Cancel any pending debounce timer
+        debounceTimer?.invalidate()
+        
+        // Apply basic styling immediately to the edited range (fast, O(1))
+        if !isProcessing && backingStore.length > 0 {
             isProcessing = true
-            applyFullMarkdownStyling()
+            applyBaseStylingToRange(editedRange)
             isProcessing = false
         }
         
+        // Schedule debounced full markdown processing
+        hasPendingFullParse = true
+        pendingEditedRange = editedRange
+        
+        debounceTimer = Timer.scheduledTimer(withTimeInterval: debounceDelay, repeats: false) { [weak self] _ in
+            self?.performDebouncedProcessing()
+        }
+        
         super.processEditing()
+    }
+    
+    // MARK: - Debounced Processing
+    
+    private func performDebouncedProcessing() {
+        guard hasPendingFullParse, !isProcessing, backingStore.length > 0 else { return }
+        
+        isProcessing = true
+        hasPendingFullParse = false
+        
+        beginEditing()
+        
+        // Use incremental parsing if we have a specific edited range
+        if let editedRange = pendingEditedRange {
+            applyIncrementalMarkdownStyling(editedRange: editedRange)
+        } else {
+            applyFullMarkdownStyling()
+        }
+        
+        pendingEditedRange = nil
+        
+        let fullRange = NSRange(location: 0, length: backingStore.length)
+        edited(.editedAttributes, range: fullRange, changeInLength: 0)
+        
+        endEditing()
+        
+        isProcessing = false
+    }
+    
+    // MARK: - Apply Base Styling (Fast, for immediate feedback)
+    
+    private func applyBaseStylingToRange(_ range: NSRange) {
+        guard range.location + range.length <= backingStore.length else { return }
+        
+        // Expand range to cover the entire affected line(s)
+        let text = backingStore.string as NSString
+        let lineRange = text.lineRange(for: range)
+        
+        guard lineRange.location + lineRange.length <= backingStore.length else { return }
+        
+        // Apply base styling only - no markdown parsing
+        backingStore.setAttributes([
+            .font: baseFont,
+            .foregroundColor: baseTextColor
+        ], range: lineRange)
+    }
+    
+    // MARK: - Incremental Markdown Styling
+    
+    private func applyIncrementalMarkdownStyling(editedRange: NSRange) {
+        guard backingStore.length > 0 else { return }
+        
+        let text = backingStore.string as NSString
+        
+        // Find affected paragraphs
+        let affectedParagraphRange = text.paragraphRange(for: editedRange)
+        
+        // For small documents or large edits, do full parse
+        if backingStore.length < 5000 || affectedParagraphRange.length > backingStore.length / 2 {
+            applyFullMarkdownStyling()
+            return
+        }
+        
+        // Reset base styling for affected paragraph(s)
+        backingStore.setAttributes([
+            .font: baseFont,
+            .foregroundColor: baseTextColor
+        ], range: affectedParagraphRange)
+        
+        // Parse only the affected paragraph(s)
+        let affectedText = text.substring(with: affectedParagraphRange)
+        let localMatches = parser.parse(affectedText)
+        
+        // Adjust match ranges to global positions and apply styling
+        for match in localMatches {
+            // Offset ranges to global position
+            let globalRange = NSRange(
+                location: match.range.location + affectedParagraphRange.location,
+                length: match.range.length
+            )
+            let globalContentRange = NSRange(
+                location: match.contentRange.location + affectedParagraphRange.location,
+                length: match.contentRange.length
+            )
+            let globalSyntaxRanges = match.syntaxRanges.map { syntaxRange in
+                NSRange(
+                    location: syntaxRange.location + affectedParagraphRange.location,
+                    length: syntaxRange.length
+                )
+            }
+            
+            let globalMatch = MarkdownMatch(
+                range: globalRange,
+                contentRange: globalContentRange,
+                style: match.style,
+                syntaxRanges: globalSyntaxRanges,
+                url: match.url
+            )
+            
+            applyMatchStyling(globalMatch, cursorInRange: isCursorInMatch(globalMatch))
+        }
+        
+        // Update cached matches - remove old matches in affected range and add new ones
+        cachedMatches.removeAll { match in
+            NSIntersectionRange(match.range, affectedParagraphRange).length > 0
+        }
+        
+        // Add new matches with global positions
+        for match in localMatches {
+            let globalMatch = MarkdownMatch(
+                range: NSRange(location: match.range.location + affectedParagraphRange.location, length: match.range.length),
+                contentRange: NSRange(location: match.contentRange.location + affectedParagraphRange.location, length: match.contentRange.length),
+                style: match.style,
+                syntaxRanges: match.syntaxRanges.map { NSRange(location: $0.location + affectedParagraphRange.location, length: $0.length) },
+                url: match.url
+            )
+            cachedMatches.append(globalMatch)
+        }
+        
+        // Re-sort cached matches
+        cachedMatches.sort { $0.range.location < $1.range.location }
+        lastParsedString = string
     }
     
     // MARK: - Full Markdown Styling
