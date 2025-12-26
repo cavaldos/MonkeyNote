@@ -226,7 +226,18 @@ private class ThickCursorLayoutManager: NSLayoutManager {
 
 private class ThickCursorTextView: NSTextView {
     var cursorWidth: CGFloat = 6
-    var cursorBlinkEnabled: Bool = true
+    var cursorBlinkEnabled: Bool = true {
+        didSet {
+            if cursorBlinkEnabled != oldValue {
+                if cursorBlinkEnabled {
+                    startBlinkTimer()
+                } else {
+                    stopBlinkTimer()
+                    cursorLayer?.opacity = 1
+                }
+            }
+        }
+    }
     var cursorAnimationEnabled: Bool = true
     var cursorAnimationDuration: Double = 0.15
     var searchText: String = ""
@@ -237,6 +248,10 @@ private class ThickCursorTextView: NSTextView {
     private var cursorLayer: CALayer?
     private var lastCursorRect: NSRect = .zero
     private var highlightLayers: [CALayer] = []
+    
+    // Cursor blinking timer
+    private var blinkTimer: Timer?
+    private var cursorVisible: Bool = true
     
     // Slash command menu
     private var slashCommandController = SlashCommandWindowController()
@@ -250,14 +265,50 @@ private class ThickCursorTextView: NSTextView {
     
     // Selection toolbar
     private var selectionToolbarController = SelectionToolbarController.shared
+    
+    deinit {
+        stopBlinkTimer()
+    }
+    
+    private func startBlinkTimer() {
+        stopBlinkTimer()
+        guard cursorBlinkEnabled else { return }
+        
+        cursorVisible = true
+        blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.cursorVisible.toggle()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            self.cursorLayer?.opacity = self.cursorVisible ? 1 : 0
+            CATransaction.commit()
+        }
+    }
+    
+    private func stopBlinkTimer() {
+        blinkTimer?.invalidate()
+        blinkTimer = nil
+    }
+    
+    private func resetBlinkTimer() {
+        // Reset the blink cycle - show cursor and restart timer
+        cursorVisible = true
+        cursorLayer?.opacity = 1
+        if cursorBlinkEnabled {
+            startBlinkTimer()
+        }
+    }
+    
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        if result && cursorBlinkEnabled {
+            startBlinkTimer()
+        }
+        return result
+    }
 
     override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
-        let shouldDraw = cursorBlinkEnabled ? flag : true
-        guard shouldDraw else {
-            cursorLayer?.opacity = 0
-            return
-        }
-
+        // We handle blinking ourselves with the timer, so ignore the flag parameter
         var thickRect = rect
         thickRect.size.width = cursorWidth
 
@@ -268,6 +319,11 @@ private class ThickCursorTextView: NSTextView {
             wantsLayer = true
             self.layer?.addSublayer(layer)
             cursorLayer = layer
+            
+            // Start blink timer when cursor layer is created
+            if cursorBlinkEnabled {
+                startBlinkTimer()
+            }
         }
 
         cursorLayer?.backgroundColor = color.cgColor
@@ -279,16 +335,16 @@ private class ThickCursorTextView: NSTextView {
                 CATransaction.setAnimationDuration(cursorAnimationDuration)
                 CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
                 cursorLayer?.frame = thickRect
-                cursorLayer?.opacity = 1
                 CATransaction.commit()
             } else {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
                 cursorLayer?.frame = thickRect
-                cursorLayer?.opacity = 1
+                CATransaction.commit()
             }
             lastCursorRect = thickRect
-        } else {
-            cursorLayer?.frame = thickRect
-            cursorLayer?.opacity = 1
+            // Reset blink when cursor moves
+            resetBlinkTimer()
         }
     }
 
@@ -300,7 +356,10 @@ private class ThickCursorTextView: NSTextView {
 
     override func resignFirstResponder() -> Bool {
         let didResign = super.resignFirstResponder()
-        cursorLayer?.opacity = 0
+        if didResign {
+            stopBlinkTimer()
+            cursorLayer?.opacity = 0
+        }
         return didResign
     }
 
