@@ -27,12 +27,14 @@ enum SuggestionMode: String, CaseIterable {
 }
 
 enum SettingsTab: String, CaseIterable {
+    case vault = "Vault"
     case appearance = "Appearance"
     case autocomplete = "Autocomplete"
     case about = "About"
     
     var icon: String {
         switch self {
+        case .vault: return "folder.fill"
         case .appearance: return "paintbrush"
         case .autocomplete: return "text.cursor"
         case .about: return "info.circle"
@@ -59,7 +61,7 @@ struct SettingsView: View {
     @ObservedObject var vaultManager: VaultManager
     var onVaultChanged: (() -> Void)? = nil
     
-    @State private var selectedTab: SettingsTab = .appearance
+    @State private var selectedTab: SettingsTab = .vault
 
     private let defaultFonts = ["monospaced", "rounded", "serif"]
 
@@ -112,6 +114,8 @@ struct SettingsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         switch selectedTab {
+                        case .vault:
+                            vaultContent
                         case .appearance:
                             appearanceContent
                         case .autocomplete:
@@ -140,23 +144,6 @@ struct SettingsView: View {
     // MARK: - Appearance Tab
     private var appearanceContent: some View {
         VStack(alignment: .leading, spacing: 24) {
-            // Vault Section
-            settingsSection("Vault") {
-                if let vaultURL = vaultManager.vaultURL {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(vaultURL.path)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                        
-                        Button("Change Vault") {
-                            changeVault()
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-            }
-            
             // Theme Section
             settingsSection("Theme") {
                 Picker("Appearance", selection: $isDarkMode) {
@@ -458,6 +445,115 @@ struct SettingsView: View {
         
             
         }
+    }
+    
+    // MARK: - Vault Tab
+    
+    private var vaultContent: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            // Current Vault Section
+            settingsSection("Current Vault") {
+                if let vaultURL = vaultManager.vaultURL {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(vaultURL.path)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        
+                        Button("Change Vault") {
+                            changeVault()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+            
+            // Recent Vaults Section
+            settingsSection("Recent Vaults") {
+                if vaultManager.recentVaults.isEmpty {
+                    Text("No recent vaults")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(vaultManager.recentVaults) { vault in
+                            HStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(vault.folderName)
+                                        .font(.system(.body, design: .monospaced))
+                                    Text(vault.path)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                    Text("Last accessed: \(formatDate(vault.lastAccessed))")
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                
+                                Spacer()
+                                
+                                // Delete button
+                                Button {
+                                    vaultManager.removeFromRecentVaults(id: vault.id)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Remove from recent vaults")
+                            }
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color(nsColor: .controlBackgroundColor))
+                            )
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                // Switch to this vault
+                                let url = URL(fileURLWithPath: vault.path)
+                                onVaultChanged?()
+                                vaultManager.setVault(url: url)
+                            }
+                            .contextMenu {
+                                Button {
+                                    let url = URL(fileURLWithPath: vault.path)
+                                    onVaultChanged?()
+                                    vaultManager.setVault(url: url)
+                                } label: {
+                                    Label("Open Vault", systemImage: "folder")
+                                }
+                                
+                                Divider()
+                                
+                                Button(role: .destructive) {
+                                    vaultManager.removeFromRecentVaults(id: vault.id)
+                                } label: {
+                                    Label("Remove from List", systemImage: "trash")
+                                }
+                            }
+                        }
+                        Spacer()
+                        // Clear all button
+                        Button(role: .destructive) {
+                            vaultManager.clearRecentVaults()
+                        } label: {
+                            Label("Clear Recent Vaults", systemImage: "trash")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+            }
+            
+            Spacer()
+        }
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        formatter.dateTimeStyle = .named
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
     
     // MARK: - Helper Views

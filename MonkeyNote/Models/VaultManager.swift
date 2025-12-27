@@ -9,6 +9,22 @@ import Foundation
 import SwiftUI
 import Combine
 
+// MARK: - Recent Vault Model
+
+struct RecentVault: Identifiable, Codable {
+    let id: UUID
+    let path: String
+    let lastAccessed: Date
+    let folderName: String
+    
+    init(path: String) {
+        self.id = UUID()
+        self.path = path
+        self.lastAccessed = Date()
+        self.folderName = URL(fileURLWithPath: path).lastPathComponent
+    }
+}
+
 class VaultManager: ObservableObject {
     @Published private(set) var vaultURL: URL?
     
@@ -16,12 +32,18 @@ class VaultManager: ObservableObject {
     private let userDefaults = UserDefaults.standard
     private let structureFileName = ".vault-structure.json"
     
+    private let recentVaultsKey = "recentVaults"
+    private let maxRecentVaults = 10
+    
+    @Published private(set) var recentVaults: [RecentVault] = []
+    
     // MARK: - Large File Protection
     /// Maximum allowed lines for a note file (files exceeding this will not be opened) //crash
     static let maxAllowedLines: Int = 5_000
     
     init() {
         setupVault()
+        loadRecentVaultsOnStartup()
     }
     
     private func setupVault() {
@@ -90,7 +112,81 @@ class VaultManager: ObservableObject {
         userDefaults.set(url.path, forKey: vaultPathKey)
         print("📂 Vault changed to: \(url.path)")
         
+        // Add to recent vaults
+        addToRecentVaults(path: url.path)
+        
         objectWillChange.send()
+    }
+    
+    // MARK: - Recent Vaults
+    
+    /// Add vault to recent vaults list
+    private func addToRecentVaults(path: String) {
+        var recent = loadRecentVaults()
+        
+        // Remove existing entry with same path
+        recent.removeAll { $0.path == path }
+        
+        // Add new entry at beginning
+        recent.insert(RecentVault(path: path), at: 0)
+        
+        // Keep only max recent vaults
+        if recent.count > maxRecentVaults {
+            recent = Array(recent.prefix(maxRecentVaults))
+        }
+        
+        // Save to UserDefaults
+        if let data = try? JSONEncoder().encode(recent) {
+            userDefaults.set(data, forKey: recentVaultsKey)
+        }
+        
+        // Update published property
+        DispatchQueue.main.async {
+            self.recentVaults = recent
+        }
+    }
+    
+    /// Load recent vaults from UserDefaults
+    private func loadRecentVaults() -> [RecentVault] {
+        guard let data = userDefaults.data(forKey: recentVaultsKey),
+              let recent = try? JSONDecoder().decode([RecentVault].self, from: data) else {
+            return []
+        }
+        
+        // Filter out vaults that no longer exist
+        let existing = recent.filter { FileManager.default.fileExists(atPath: $0.path) }
+        
+        // If some vaults were removed, update UserDefaults
+        if existing.count != recent.count {
+            if let data = try? JSONEncoder().encode(existing) {
+                userDefaults.set(data, forKey: recentVaultsKey)
+            }
+        }
+        
+        return existing
+    }
+    
+    /// Load recent vaults on startup
+    private func loadRecentVaultsOnStartup() {
+        let recent = loadRecentVaults()
+        DispatchQueue.main.async {
+            self.recentVaults = recent
+        }
+    }
+    
+    /// Remove vault from recent list
+    func removeFromRecentVaults(id: UUID) {
+        recentVaults.removeAll { $0.id == id }
+        
+        if let data = try? JSONEncoder().encode(recentVaults) {
+            userDefaults.set(data, forKey: recentVaultsKey)
+        }
+    }
+    
+    /// Clear all recent vaults
+    func clearRecentVaults() {
+        recentVaults = []
+        userDefaults.removeObject(forKey: recentVaultsKey)
     }
     
     // MARK: - Save/Load Folder Structure + Notes
