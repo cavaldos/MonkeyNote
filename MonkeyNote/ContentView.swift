@@ -32,6 +32,12 @@ func triggerHaptic(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .generic
 }
 #endif
 
+// MARK: - Save Status Enum
+enum SaveStatus: Equatable {
+    case idle
+    case saving
+}
+
 // MARK: - Notifications
 extension Notification.Name {
     static let focusSearch = Notification.Name("focusSearch")
@@ -145,8 +151,10 @@ struct ContentView: View {
     @State private var trashItems: [TrashItem] = []
     @State private var showTrash: Bool = false
     
-    // Debounce save
+    // Save delay status
+    @State private var saveStatus: SaveStatus = .idle
     @State private var saveTask: Task<Void, Never>?
+    private let saveDelay: TimeInterval = 10.0
     
     // Drag & Drop state
     @State private var dragOverFolderID: NoteFolder.ID?
@@ -156,6 +164,10 @@ struct ContentView: View {
     
     // Search focus
     @FocusState private var isSearchFocused: Bool
+    
+    // Large file alert state
+    @State private var showLargeFileAlert: Bool = false
+    @State private var largeFileInfo: (name: String, lines: Int)?
 
     @AppStorage("note.fontFamily") private var fontFamily: String = "monospaced"
     @AppStorage("note.fontSize") private var fontSize: Double = 28
@@ -202,7 +214,7 @@ struct ContentView: View {
             },
             set: { newValue in
                 guard let selectedFolderID = selectedFolderID, let selectedNoteID = selectedNoteID else { return }
-                
+
                 // Update in-memory immediately
                 updateFolder(folderID: selectedFolderID) { folder in
                     guard let noteIndex = folder.notes.firstIndex(where: { $0.id == selectedNoteID }) else { return }
@@ -217,15 +229,18 @@ struct ContentView: View {
                         }
                     }
                 }
-                
-                // Debounced save to disk (500ms delay)
+
+                // Cancel any existing save task and start new save with delay
                 saveTask?.cancel()
+                saveStatus = .saving
+
                 saveTask = Task {
-                    try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
+                    try? await Task.sleep(nanoseconds: UInt64(saveDelay * 1_000_000_000))
                     guard !Task.isCancelled else { return }
-                    
+
                     await MainActor.run {
                         saveAllToDisk()
+                        saveStatus = .idle
                     }
                 }
             }
@@ -291,7 +306,8 @@ struct ContentView: View {
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .onDisappear {
-            // Save when view disappears
+            // Cancel pending save task and save immediately when view disappears
+            saveTask?.cancel()
             saveAllToDisk()
         }
     }
@@ -312,9 +328,16 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Text(selectedNoteTitle)
-            Circle()
-                .fill(Color.red)
-                .frame(width: 6, height: 6)
+            if saveStatus == .saving {
+                ProgressView()
+                    .scaleEffect(0.5)
+                    .controlSize(.small)
+                    .tint(.gray)
+            } else {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 6, height: 6)
+            }
         }
         .font(.system(.body, design: .monospaced))
         .foregroundStyle(isDarkMode ? .white.opacity(0.45) : .black.opacity(0.55))
@@ -620,16 +643,47 @@ struct ContentView: View {
             background
 
             if let folderID = selectedFolderID, let folder = getFolder(folderID: folderID) {
-                List(selection: $selectedNoteID) {
+                List(selection: Binding(
+                    get: { selectedNoteID },
+                    set: { newValue in
+                        // Check if trying to select a large file
+                        if let noteID = newValue,
+                           let note = folder.notes.first(where: { $0.id == noteID }),
+                           note.isTooLarge {
+                            // Block selection - show alert
+                            largeFileInfo = (note.title, note.lineCount)
+                            showLargeFileAlert = true
+                            return
+                        }
+                        selectedNoteID = newValue
+                    }
+                )) {
                     ForEach(filteredNotes(in: folder)) { note in
-                        VStack(alignment: .leading, spacing: 4) {
-                            highlightedText(note.title, searchText: searchText)
-                                .font(.system(.body, design: .monospaced))
-                                .lineLimit(1)
-                            highlightedText(notePreview(for: note.text), searchText: searchText)
-                                .font(.system(.footnote, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                highlightedText(note.title, searchText: searchText)
+                                    .font(.system(.body, design: .monospaced))
+                                    .lineLimit(1)
+                                highlightedText(notePreview(for: note.text), searchText: searchText)
+                                    .font(.system(.footnote, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            
+                            Spacer()
+                            
+                            // Warning indicator for large files
+                            if note.isTooLarge {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(.orange)
+                                        .font(.system(size: 12))
+                                    Text("\(note.lineCount) lines")
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.orange)
+                                }
+                                .help("File too large to open (max \(VaultManager.maxAllowedLines) lines)")
+                            }
                         }
                         .padding(.vertical, 4)
                         .tag(note.id)
@@ -669,6 +723,13 @@ struct ContentView: View {
                 .disabled(selectedFolderID == nil)
             }
         }
+        .alert("File Too Large", isPresented: $showLargeFileAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            if let info = largeFileInfo {
+                Text("\"\(info.name)\" has \(info.lines) lines.\nMaximum allowed: \(VaultManager.maxAllowedLines) lines.")
+            }
+        }
     }
 
     // MARK: - Detail Editor
@@ -705,26 +766,30 @@ struct ContentView: View {
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 // Markdown render toggle button
-                Button {
-                    markdownRenderEnabled.toggle()
-                } label: {
-                    Image(systemName: markdownRenderEnabled ? "text.badge.checkmark" : "text.badge.xmark")
-                }
-                .help(markdownRenderEnabled ? "Disable Markdown Rendering" : "Enable Markdown Rendering")
+                ThemeIconButton(
+                    systemImage: markdownRenderEnabled ? "text.badge.checkmark" : "text.badge.xmark",
+                    isSelected: markdownRenderEnabled,
+                    action: { markdownRenderEnabled.toggle() },
+                    tooltip: markdownRenderEnabled ? "Markdown: ON (click to disable)" : "Markdown: OFF (click to enable)"
+                )
                 
-                Button {
-                    startRenameSelectedNote()
-                } label: {
-                    Image(systemName: "pencil")
-                }
+                ThemeIconButton(
+                    systemImage: "pencil",
+                    isSelected: false,
+                    action: { startRenameSelectedNote() },
+                    tooltip: "Rename note"
+                )
                 .disabled(selectedNoteID == nil)
+                .opacity(selectedNoteID == nil ? 0.5 : 1.0)
 
-                Button(role: .destructive) {
-                    deleteSelectedNote()
-                } label: {
-                    Image(systemName: "trash")
-                }
+                ThemeIconButton(
+                    systemImage: "trash",
+                    isSelected: false,
+                    action: { deleteSelectedNote() },
+                    tooltip: "Delete note"
+                )
                 .disabled(selectedNoteID == nil)
+                .opacity(selectedNoteID == nil ? 0.5 : 1.0)
                 
                 // Search field with results and navigation && search results
                 HStack(spacing: 6) {

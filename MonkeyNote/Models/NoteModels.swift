@@ -14,6 +14,10 @@ struct NoteItem: Identifiable, Hashable, Codable {
     var updatedAt: Date
     var isTitleCustom: Bool
     var savedTitle: String
+    
+    // Large file protection
+    var isTooLarge: Bool
+    var lineCount: Int
 
     init(
         id: UUID = UUID(),
@@ -21,7 +25,9 @@ struct NoteItem: Identifiable, Hashable, Codable {
         text: String = "",
         updatedAt: Date = Date(),
         isTitleCustom: Bool = false,
-        savedTitle: String? = nil
+        savedTitle: String? = nil,
+        isTooLarge: Bool = false,
+        lineCount: Int = 0
     ) {
         self.id = id
         self.title = title
@@ -29,6 +35,8 @@ struct NoteItem: Identifiable, Hashable, Codable {
         self.updatedAt = updatedAt
         self.isTitleCustom = isTitleCustom
         self.savedTitle = savedTitle ?? title
+        self.isTooLarge = isTooLarge
+        self.lineCount = lineCount
     }
     
     // Only save metadata to JSON, not text content (stored in .md files)
@@ -44,6 +52,8 @@ struct NoteItem: Identifiable, Hashable, Codable {
         isTitleCustom = try container.decode(Bool.self, forKey: .isTitleCustom)
         savedTitle = try container.decode(String.self, forKey: .savedTitle)
         text = "" // Will be loaded from .md file
+        isTooLarge = false // Will be determined when loading .md file
+        lineCount = 0 // Will be determined when loading .md file
     }
     
     func encode(to encoder: Encoder) throws {
@@ -53,7 +63,7 @@ struct NoteItem: Identifiable, Hashable, Codable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encode(isTitleCustom, forKey: .isTitleCustom)
         try container.encode(savedTitle, forKey: .savedTitle)
-        // text is NOT encoded - stored in .md file
+        // text, isTooLarge, lineCount are NOT encoded - determined at runtime
     }
 }
 

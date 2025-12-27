@@ -12,8 +12,20 @@ import AppKit
 // MARK: - Word Suggestion Manager
 class WordSuggestionManager {
     static let shared = WordSuggestionManager()
-    private var bundledWords: [String] = []
-    private var customWords: [String] = []
+    
+    // HashSet for O(1) duplicate checking and existence lookup
+    private var bundledWordSet: Set<String> = []
+    private var customWordSet: Set<String> = []
+    
+    // Sorted arrays for O(log n) binary search with prefix matching
+    private var bundledWordsSorted: [String] = []
+    private var customWordsSorted: [String] = []
+    private var allWordsSorted: [String] = []
+    
+    // Prefix cache for O(1) repeated queries (max 100 entries to prevent memory bloat)
+    private var prefixCache: [String: [String]] = [:]
+    private let maxCacheSize = 100
+    
     private var customFolderURL: URL?
     private var useBuiltIn: Bool = true
     private var minWordLength: Int = 4
@@ -29,7 +41,10 @@ class WordSuggestionManager {
         // Load from bundled word.txt file
         if let path = Bundle.main.path(forResource: "word", ofType: "txt"),
            let content = try? String(contentsOfFile: path, encoding: .utf8) {
-            bundledWords = parseWords(from: content)
+            let words = parseWords(from: content)
+            bundledWordSet = Set(words) // O(n) - deduplicate automatically
+            bundledWordsSorted = bundledWordSet.sorted() // O(n log n) - sort once
+            rebuildCombinedWordList()
         }
     }
     
@@ -51,10 +66,13 @@ class WordSuggestionManager {
     
     func setUseBuiltIn(_ value: Bool) {
         useBuiltIn = value
+        rebuildCombinedWordList()
+        clearCache()
     }
     
     func setMinWordLength(_ value: Int) {
         minWordLength = value
+        clearCache()
     }
     
     func setCustomFolder(_ url: URL?) {
@@ -74,7 +92,10 @@ class WordSuggestionManager {
         } else {
             UserDefaults.standard.removeObject(forKey: "note.customWordFolderBookmark")
             customFolderURL = nil
-            customWords = []
+            customWordSet = []
+            customWordsSorted = []
+            rebuildCombinedWordList()
+            clearCache()
         }
     }
     
@@ -83,7 +104,7 @@ class WordSuggestionManager {
     }
     
     private func loadCustomWords(from folderURL: URL) {
-        customWords = []
+        var tempWords: [String] = []
         
         let fileManager = FileManager.default
         guard let enumerator = fileManager.enumerator(at: folderURL, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else {
@@ -94,13 +115,16 @@ class WordSuggestionManager {
             if fileURL.pathExtension.lowercased() == "txt" {
                 if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
                     let words = parseWords(from: content)
-                    customWords.append(contentsOf: words)
+                    tempWords.append(contentsOf: words)
                 }
             }
         }
         
-        // Remove duplicates
-        customWords = Array(Set(customWords))
+        // Use Set for automatic deduplication - O(n)
+        customWordSet = Set(tempWords)
+        customWordsSorted = customWordSet.sorted() // O(n log n) - sort once
+        rebuildCombinedWordList()
+        clearCache()
     }
     
     func reloadCustomWords() {
@@ -117,30 +141,85 @@ class WordSuggestionManager {
             .filter { !$0.isEmpty && $0.count >= 2 }
     }
     
-    private var allWords: [String] {
-        var words: [String] = []
+    // Rebuild combined sorted word list when sources change
+    private func rebuildCombinedWordList() {
+        var combinedSet: Set<String> = []
         if useBuiltIn {
-            words.append(contentsOf: bundledWords)
+            combinedSet.formUnion(bundledWordSet)
         }
-        words.append(contentsOf: customWords)
-        return words
+        combinedSet.formUnion(customWordSet)
+        allWordsSorted = combinedSet.sorted() // O(n log n) - sort combined list once
     }
     
+    // Clear prefix cache
+    private func clearCache() {
+        prefixCache.removeAll()
+    }
+    
+    // OPTIMIZED: HashSet + Binary Search + Caching
+    // Time complexity: O(log n + k) where k = number of matches (typically < 10)
+    // Space complexity: O(n + c) where c = cache size (max 100)
     func getSuggestion(for prefix: String) -> String? {
         guard !prefix.isEmpty else { return nil }
         let lowercasedPrefix = prefix.lowercased()
         
-        // Find first word that starts with the prefix and meets minimum length
-        if let match = allWords.first(where: { 
-            $0.lowercased().hasPrefix(lowercasedPrefix) && 
-            $0.lowercased() != lowercasedPrefix &&
-            $0.count >= minWordLength  // Filter by minimum word length
-        }) {
-            // Return only the completion part (without the prefix)
-            let completionStartIndex = match.index(match.startIndex, offsetBy: prefix.count)
-            return String(match[completionStartIndex...])
+        // Check cache first - O(1)
+        if let cached = prefixCache[lowercasedPrefix] {
+            // Return first match that meets minWordLength and isn't exact match
+            return cached.first {
+                $0.lowercased() != lowercasedPrefix && $0.count >= minWordLength
+            }.map { word in
+                // Return only completion part (without the prefix)
+                let completionStartIndex = word.index(word.startIndex, offsetBy: prefix.count)
+                return String(word[completionStartIndex...])
+            }
         }
-        return nil
+        
+        // Binary search to find first word >= lowercasedPrefix - O(log n)
+        var matches: [String] = []
+        
+        // Binary search for the starting position
+        var left = 0
+        var right = allWordsSorted.count
+        while left < right {
+            let mid = left + (right - left) / 2
+            if allWordsSorted[mid].lowercased() < lowercasedPrefix {
+                left = mid + 1
+            } else {
+                right = mid
+            }
+        }
+        let startIndex = left
+        
+        // Linear scan from startIndex (very fast because sorted, typically finds match in < 10 iterations)
+        for i in startIndex..<allWordsSorted.count {
+            let word = allWordsSorted[i]
+            let lowercasedWord = word.lowercased()
+            
+            if lowercasedWord.hasPrefix(lowercasedPrefix) {
+                matches.append(word)
+            } else {
+                break // Stop when no longer matching prefix (early termination)
+            }
+        }
+        
+        // Cache the results (limit cache size to prevent memory bloat)
+        if prefixCache.count >= maxCacheSize {
+            // Remove oldest entry (simple FIFO, could use LRU for better performance)
+            if let firstKey = prefixCache.keys.first {
+                prefixCache.removeValue(forKey: firstKey)
+            }
+        }
+        prefixCache[lowercasedPrefix] = matches
+        
+        // Return first match that meets criteria
+        return matches.first {
+            $0.lowercased() != lowercasedPrefix && $0.count >= minWordLength
+        }.map { word in
+            // Return only completion part (without the prefix)
+            let completionStartIndex = word.index(word.startIndex, offsetBy: prefix.count)
+            return String(word[completionStartIndex...])
+        }
     }
     
     // MARK: - Sentence Suggestion (Beta)
@@ -151,11 +230,11 @@ class WordSuggestionManager {
     }
     
     var customWordCount: Int {
-        return customWords.count
+        return customWordSet.count
     }
     
     var bundledWordCount: Int {
-        return bundledWords.count
+        return bundledWordSet.count
     }
 }
 
@@ -1357,12 +1436,38 @@ private class ThickCursorTextView: NSTextView {
     override func layout() {
         super.layout()
         
-        // Only update if search is active
+        // Debounce viewport updates for markdown rendering
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(debouncedUpdateViewport), object: nil)
+        perform(#selector(debouncedUpdateViewport), with: nil, afterDelay: 0.05)
+        
+        // Only update search highlights if search is active
         guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
         // Debounce scroll updates to prevent excessive redraws
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(debouncedUpdateHighlights), object: nil)
         perform(#selector(debouncedUpdateHighlights), with: nil, afterDelay: 0.03)
+    }
+    
+    /// Update viewport for markdown rendering (debounced)
+    @objc private func debouncedUpdateViewport() {
+        updateMarkdownViewport()
+    }
+    
+    /// Notify MarkdownTextStorage about visible range for viewport-based rendering
+    private func updateMarkdownViewport() {
+        guard let layoutManager = layoutManager,
+              let textContainer = textContainer,
+              let textStorage = textStorage as? MarkdownTextStorage else { return }
+        
+        let visibleRect = self.visibleRect
+        guard visibleRect.height > 0 else { return }
+        
+        // Get visible character range
+        let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+        let visibleCharRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        
+        // Notify text storage about visible range
+        textStorage.updateVisibleRange(visibleCharRange)
     }
     
     @objc private func debouncedUpdateHighlights() {
