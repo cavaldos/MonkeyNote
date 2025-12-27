@@ -9,37 +9,91 @@ xcuserdata/
 *.xcodeproj/project.xcworkspace/
 **/xcuserdata/
 **/xcuserdata/**
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
 
 # Swift Package Manager
 .build/
 Packages/
 .swiftpm
+Package.resolved
 
 # CocoaPods
 Pods/
+*.podspec
+Podfile.lock
 
 # Carthage
 Carthage/
+Cartfile.resolved
 
 # fastlane
 fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots
+fastlane/test_output
 
 # macOS
 *.DS_Store
+.AppleDouble
+.LSOverride
+._*
 
-# Secrets
+# Thumbnails
+Thumbs.db
+
+# Secrets & Environment
 .env
 .env.*
+secrets.json
 
 # Generated app files
 *.app
 *.dSYM
+*.ipa
+*.dSYM.zip
+*.xcarchive
 
 # Editor directories
 .vscode/
 .idea/
+*.sublime-workspace
+*.sublime-project
 
-# Other
+# Temporary files
 *.swp
+*.swo
+*~
+.*.sw[a-z]
+*.tmp
+*.bak
+
+# Build artifacts
+*.hmap
+*.ipa
+*.dSYM.zip
+*.xcarchive
+
+# Debugging
+*.log
+xcuserdata/
+*.gcda
+*.gcno
+
+# Release folder
+release/
+dist/
+output/
+
+# DMG files (comment out if you want to commit DMGs)
+*.dmg
+
+# Documentation build
+docs/_build/
