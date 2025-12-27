@@ -18,8 +18,64 @@ struct TrashView: View {
     @State private var selectedItem: TrashItem?
     
     var body: some View {
+        Group {
+            if trashItems.isEmpty {
+                emptyTrashView
+            } else {
+                trashContentView
+            }
+        }
+        .alert("Empty Trash?", isPresented: $showEmptyConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Empty Trash", role: .destructive) {
+                selectedItem = nil
+                onEmptyTrash()
+            }
+        } message: {
+            Text("This will permanently delete \(trashItems.count) item(s). This action cannot be undone.")
+        }
+        .onChange(of: trashItems) { _, newItems in
+            if let selected = selectedItem, !newItems.contains(where: { $0.id == selected.id }) {
+                selectedItem = nil
+            }
+        }
+    }
+    
+    // MARK: - Empty Trash View (Full Screen)
+    
+    private var emptyTrashView: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            
+            Image(systemName: "trash")
+                .font(.system(size: 64))
+                .foregroundStyle(.secondary)
+            
+            Text("Trash is Empty")
+                .font(.system(.title, design: .monospaced, weight: .bold))
+            
+            Text("Deleted items will appear here")
+                .font(.system(.body, design: .monospaced))
+                .foregroundStyle(.secondary)
+            
+            Spacer()
+            
+            // Bottom toolbar
+            HStack {
+                Button("Done") {
+                    dismiss()
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    // MARK: - Trash Content View (Split View)
+    
+    private var trashContentView: some View {
         NavigationSplitView {
-            // Sidebar - List of trash items
             trashListView
                 .navigationTitle("Trash")
                 .toolbar {
@@ -33,66 +89,42 @@ struct TrashView: View {
                         Button("Empty Trash") {
                             showEmptyConfirmation = true
                         }
-                        .disabled(trashItems.isEmpty)
                     }
                 }
         } detail: {
-            // Detail - Content preview (only show when trash is not empty)
-            if !trashItems.isEmpty {
-                detailView
-            }
-        }
-        .alert("Empty Trash?", isPresented: $showEmptyConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Empty Trash", role: .destructive) {
-                selectedItem = nil
-                onEmptyTrash()
-            }
-        } message: {
-            Text("This will permanently delete \(trashItems.count) item(s). This action cannot be undone.")
-        }
-        .onChange(of: trashItems) { _, newItems in
-            // Clear selection if selected item no longer exists
-            if let selected = selectedItem, !newItems.contains(where: { $0.id == selected.id }) {
-                selectedItem = nil
-            }
+            detailView
         }
     }
     
-    @ViewBuilder
+    // MARK: - List View
+    
     private var trashListView: some View {
-        if trashItems.isEmpty {
-            ContentUnavailableView(
-                "Trash is Empty",
-                systemImage: "trash",
-                description: Text("Deleted items will appear here")
-            )
-        } else {
-            List(trashItems, selection: $selectedItem) { item in
-                TrashItemRow(item: item)
-                    .tag(item)
-                    .contextMenu {
-                        Button {
-                            onRestore(item)
-                            if selectedItem?.id == item.id {
-                                selectedItem = nil
-                            }
-                        } label: {
-                            Label("Restore", systemImage: "arrow.uturn.backward")
+        List(trashItems, selection: $selectedItem) { item in
+            TrashItemRow(item: item)
+                .tag(item)
+                .contextMenu {
+                    Button {
+                        onRestore(item)
+                        if selectedItem?.id == item.id {
+                            selectedItem = nil
                         }
-                        
-                        Button(role: .destructive) {
-                            if selectedItem?.id == item.id {
-                                selectedItem = nil
-                            }
-                            onDelete(item)
-                        } label: {
-                            Label("Delete Permanently", systemImage: "trash")
-                        }
+                    } label: {
+                        Label("Restore", systemImage: "arrow.uturn.backward")
                     }
-            }
+                    
+                    Button(role: .destructive) {
+                        if selectedItem?.id == item.id {
+                            selectedItem = nil
+                        }
+                        onDelete(item)
+                    } label: {
+                        Label("Delete Permanently", systemImage: "trash")
+                    }
+                }
         }
     }
+    
+    // MARK: - Detail View
     
     @ViewBuilder
     private var detailView: some View {
@@ -266,7 +298,16 @@ struct TrashItemDetailView: View {
     }
 }
 
-#Preview {
+#Preview("Empty Trash") {
+    TrashView(
+        trashItems: .constant([]),
+        onRestore: { _ in },
+        onDelete: { _ in },
+        onEmptyTrash: { }
+    )
+}
+
+#Preview("With Items") {
     TrashView(
         trashItems: .constant([
             TrashItem(name: "Old Note.md", type: .file, relativePath: "Notes/Old Note.md", fullURL: URL(fileURLWithPath: "/tmp/test.md")),
