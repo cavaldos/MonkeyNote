@@ -18,6 +18,25 @@
 
 MonkeyNote is a minimalist, native macOS note-taking application built with SwiftUI. It provides a clean, distraction-free interface for organizing your thoughts with powerful features like markdown rendering, custom cursor controls, intelligent autocomplete, and hierarchical folder organization.
 
+## Demo
+
+> **Quick demo:** watch a short recording of MonkeyNote in action.
+
+<p align="center">
+  <a href="doc/Screen%20Recording.mov">
+    <img src="doc/icon.png" alt="Demo thumbnail" width="600"/>
+  </a>
+</p>
+
+<details>
+<summary>Play video (in-browser)</summary>
+
+<video controls width="100%" style="max-width:720px">
+  <source src="doc/Screen Recording.mov" type="video/quicktime">
+  Your browser doesn't support embedded video. Click the thumbnail above to download the video.
+</video>
+</details>
+
 ## ✨ Features
 
 - **Hierarchical Organization**: Create unlimited nested folders to organize your notes
