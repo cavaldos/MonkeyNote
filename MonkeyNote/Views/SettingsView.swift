@@ -120,11 +120,12 @@ struct SettingsView: View {
                         }
                     }
                     .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollIndicators(.hidden)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(minWidth: 500, minHeight: 400)
+            .frame(minWidth: 520, minHeight: 400)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") {
@@ -414,7 +415,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .center)
             .padding(.vertical, 20)
             
             Divider()
@@ -424,7 +425,7 @@ struct SettingsView: View {
                     NSWorkspace.shared.open(URL(string: "https://github.com/cavaldos/MonkeyNote")!)
                 }) {
                     Text("Contribute")
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
                 .buttonStyle(.bordered)
                 .frame(width: 150)
@@ -433,7 +434,7 @@ struct SettingsView: View {
                     NSWorkspace.shared.open(URL(string: "https://github.com/cavaldos/MonkeyNote/issues")!)
                 }) {
                     Text("Report a Bug")
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
                 .buttonStyle(.bordered)
                 .frame(width: 150)
@@ -446,16 +447,15 @@ struct SettingsView: View {
                             .font(.system(size: 12))
                         Text("Support me")
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 }
                 .buttonStyle(.bordered)
                 .frame(width: 150)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .center)
             .padding(.vertical, 12)
         
             
-            Spacer()
         }
     }
     
