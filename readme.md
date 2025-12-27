@@ -10,6 +10,8 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%2015.7+-lightgrey.svg)](https://www.apple.com/macos/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+<a href="https://ko-fi.com/calvados" target="_blank"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" height="36"></a>
+
 </div>
 
 ## Overview
@@ -216,22 +218,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- Built with SwiftUI and native macOS frameworks
-- Inspired by minimalist note-taking applications
-- Icon design by [Your Name]
-
-## 📧 Contact
-
-For bug reports and feature requests, please open an issue on GitHub.
-
----
+## ⭐ Star History
 
 <div align="center">
-Made with ❤️ for macOS
+
+[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/MonkeyNote&type=Date)](https://star-history.com/#yourusername/MonkeyNote&Date)
+
 </div>
