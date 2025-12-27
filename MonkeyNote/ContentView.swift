@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import UniformTypeIdentifiers
 
 #if os(iOS)
 import UIKit
@@ -171,6 +172,11 @@ struct ContentView: View {
     // Large file alert state
     @State private var showLargeFileAlert: Bool = false
     @State private var largeFileInfo: (name: String, lines: Int)?
+    
+    // External file editing state
+    @State private var externalFileURL: URL?
+    @State private var externalFileText: String = ""
+    @State private var isDropTargeted: Bool = false
 
     @AppStorage("note.fontFamily") private var fontFamily: String = "monospaced"
     @AppStorage("note.fontSize") private var fontSize: Double = 28
@@ -196,6 +202,11 @@ struct ContentView: View {
     }
 
     private var selectedNoteTitle: String {
+        // If editing external file, show its name
+        if let url = externalFileURL {
+            return url.lastPathComponent
+        }
+        
         guard let selectedFolderID = selectedFolderID,
               let folder = getFolder(folderID: selectedFolderID),
               let noteIndex = selectedNoteIndex else {
@@ -203,8 +214,159 @@ struct ContentView: View {
         }
         return folder.notes[noteIndex].title
     }
+    
+    // MARK: - External File Handling
+    
+    /// Check if currently editing an external file
+    private var isEditingExternalFile: Bool {
+        externalFileURL != nil
+    }
+    
+    /// Close external file and return to vault notes
+    private func closeExternalFile() {
+        // Save external file first
+        saveExternalFile()
+        
+        // Clear external file state
+        externalFileURL = nil
+        externalFileText = ""
+    }
+    
+    /// Save external file to its original location
+    private func saveExternalFile() {
+        guard let url = externalFileURL else { return }
+        do {
+            try externalFileText.write(to: url, atomically: true, encoding: .utf8)
+            print("💾 Saved external file: \(url.path)")
+        } catch {
+            print("❌ Failed to save external file: \(error)")
+        }
+    }
+    
+    /// Open external file for editing
+    private func openExternalFile(url: URL) {
+        // Save current note first
+        saveTask?.cancel()
+        if selectedNoteID != nil {
+            saveAllToDisk()
+        }
+        
+        // Save previous external file if any
+        if externalFileURL != nil {
+            saveExternalFile()
+        }
+        
+        // Clear vault selection
+        selectedNoteID = nil
+        
+        // Load external file
+        do {
+            // Start accessing security-scoped resource
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            
+            externalFileText = try String(contentsOf: url, encoding: .utf8)
+            externalFileURL = url
+            print("📂 Opened external file: \(url.path)")
+        } catch {
+            print("❌ Failed to open external file: \(error)")
+        }
+    }
+    
+    /// Handle dropped files
+    private func handleDroppedFiles(_ providers: [NSItemProvider]) -> Bool {
+        // Supported file extensions
+        let supportedExtensions: Set<String> = [
+            // Markdown & Text
+            "md", "markdown", "txt", "text",
+            // Web
+            "html", "htm", "css", "js", "ts", "jsx", "tsx", "json", "xml",
+            // Programming
+            "swift", "m", "h", "c", "cpp", "cc", "cxx", "hpp", "java", "kt", "kts",
+            "py", "rb", "php", "go", "rs", "scala", "clj", "ex", "exs",
+            // Shell & Config
+            "sh", "bash", "zsh", "fish", "ps1", "bat", "cmd",
+            "yaml", "yml", "toml", "ini", "conf", "cfg", "env",
+            // Data
+            "csv", "sql", "graphql", "gql",
+            // Documentation
+            "rst", "adoc", "tex", "log",
+            // Other
+            "gitignore", "dockerfile", "makefile", "r", "lua", "vim", "el"
+        ]
+        
+        for provider in providers {
+            // Check for file URL
+            if provider.hasItemConformingToTypeIdentifier("public.file-url") {
+                provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, error in
+                    if let data = item as? Data,
+                       let url = URL(dataRepresentation: data, relativeTo: nil) {
+                        // Check file extension
+                        let ext = url.pathExtension.lowercased()
+                        let filename = url.lastPathComponent.lowercased()
+                        
+                        // Allow if extension matches OR if it's a known dotfile
+                        let isSupported = supportedExtensions.contains(ext) ||
+                            supportedExtensions.contains(filename) ||
+                            ext.isEmpty && !filename.hasPrefix(".") == false // dotfiles without extension
+                        
+                        if isSupported {
+                            DispatchQueue.main.async {
+                                self.openExternalFile(url: url)
+                            }
+                        }
+                    }
+                }
+                return true
+            }
+        }
+        return false
+    }
+    
+    /// Format file path for display (replace home directory with ~)
+    private func formatFilePath(_ url: URL) -> String {
+        let path = url.path
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        
+        if path.hasPrefix(homeDir) {
+            return "~" + path.dropFirst(homeDir.count)
+        }
+        return path
+    }
 
     // MARK: - Note Text Binding & Updates
+    
+    /// Text binding that handles both vault notes and external files
+    private var activeTextBinding: Binding<String> {
+        if isEditingExternalFile {
+            return Binding(
+                get: { externalFileText },
+                set: { newValue in
+                    externalFileText = newValue
+                    
+                    // Auto-save external file with delay
+                    saveTask?.cancel()
+                    saveStatus = .saving
+                    
+                    saveTask = Task {
+                        try? await Task.sleep(nanoseconds: UInt64(saveDelay * 1_000_000_000))
+                        guard !Task.isCancelled else { return }
+                        
+                        await MainActor.run {
+                            saveExternalFile()
+                            saveStatus = .idle
+                        }
+                    }
+                }
+            )
+        } else {
+            return selectedNoteTextBinding
+        }
+    }
     
     private var selectedNoteTextBinding: Binding<String> {
         Binding(
@@ -262,18 +424,18 @@ struct ContentView: View {
     // MARK: - Statistics Calculations
     
     private var wordCount: Int {
-        selectedNoteText
+        activeText
             .split(whereSeparator: { $0.isWhitespace || $0.isNewline })
             .count
     }
 
     private var lineCount: Int {
-        guard !selectedNoteText.isEmpty else { return 1 }
-        return selectedNoteText.components(separatedBy: .newlines).count
+        guard !activeText.isEmpty else { return 1 }
+        return activeText.components(separatedBy: .newlines).count
     }
 
     private var characterCount: Int {
-        selectedNoteText.replacingOccurrences(of: "\n", with: "").count
+        activeText.replacingOccurrences(of: "\n", with: "").count
     }
 
     var body: some View {
@@ -362,6 +524,18 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
+            // Close button for external file
+            if isEditingExternalFile {
+                Button {
+                    closeExternalFile()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Close external file")
+            }
+            
             Text(selectedNoteTitle)
             if saveStatus == .saving {
                 ProgressView()
@@ -373,16 +547,30 @@ struct ContentView: View {
                     .fill(Color.red)
                     .frame(width: 6, height: 6)
             }
+            
+            // Show file path for external file
+            if isEditingExternalFile, let url = externalFileURL {
+                Text(formatFilePath(url))
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
+                    .foregroundStyle(isDarkMode ? .white.opacity(0.35) : .black.opacity(0.45))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
         }
         .font(.system(.body, design: .monospaced))
         .foregroundStyle(isDarkMode ? .white.opacity(0.45) : .black.opacity(0.55))
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+    
+    /// Current text being edited (vault note or external file)
+    private var activeText: String {
+        isEditingExternalFile ? externalFileText : selectedNoteText
+    }
 
     private var editor: some View {
 #if os(macOS) // pointer
         ThickCursorTextEditor(
-            text: selectedNoteTextBinding,
+            text: activeTextBinding,
             isDarkMode: isDarkMode,
             cursorWidth: cursorWidth,
             cursorBlinkEnabled: cursorBlinkEnabled,
@@ -408,7 +596,7 @@ struct ContentView: View {
             }
         )
         .overlay(alignment: .topLeading) {
-            if selectedNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if activeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text("Write something…")
                     .font(.system(size: fontSize, weight: .regular, design: fontDesign))
                     .foregroundStyle(isDarkMode ? .white.opacity(0.25) : .black.opacity(0.25))
@@ -419,13 +607,13 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 #else
-        TextEditor(text: selectedNoteTextBinding)
+        TextEditor(text: activeTextBinding)
             .font(.system(size: fontSize, weight: .regular, design: fontDesign))
             .foregroundStyle(isDarkMode ? .white.opacity(0.92) : .black.opacity(0.92))
             .scrollContentBackground(.hidden)
             .background(Color.clear)
             .overlay(alignment: .topLeading) {
-                if selectedNoteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if activeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("Write something…")
                         .font(.system(size: fontSize, weight: .regular, design: fontDesign))
                         .foregroundStyle(isDarkMode ? .white.opacity(0.25) : .black.opacity(0.25))
@@ -690,6 +878,12 @@ struct ContentView: View {
                             showLargeFileAlert = true
                             return
                         }
+                        
+                        // Close external file if selecting vault note
+                        if newValue != nil && isEditingExternalFile {
+                            closeExternalFile()
+                        }
+                        
                         selectedNoteID = newValue
                     }
                 )) {
@@ -775,9 +969,24 @@ struct ContentView: View {
             (isDarkMode ? Color.black.opacity(0.16) : Color.black.opacity(0.04))
                 .ignoresSafeArea()
 
-            if selectedNoteIndex == nil {
-                Text("Select a note")
-                    .foregroundStyle(isDarkMode ? .white.opacity(0.45) : .black.opacity(0.55))
+            // Show editor if we have a selected note OR an external file
+            if selectedNoteIndex == nil && !isEditingExternalFile {
+                // Empty state with drop hint
+                VStack(spacing: 16) {
+                    Text("Select a note")
+                        .foregroundStyle(isDarkMode ? .white.opacity(0.45) : .black.opacity(0.55))
+                    
+                    if isDropTargeted {
+                        Text("Drop file here to edit")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.blue)
+                            .transition(.opacity)
+                    } else {
+                        Text("or drop a file to edit")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(isDarkMode ? .white.opacity(0.25) : .black.opacity(0.25))
+                    }
+                }
             } else {
                 VStack(spacing: 0) {
                     header
@@ -794,6 +1003,19 @@ struct ContentView: View {
                         .padding(.bottom, 10)
                 }
             }
+            
+            // Drop overlay
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.blue, style: StrokeStyle(lineWidth: 3, dash: [10, 5]))
+                    .background(Color.blue.opacity(0.1))
+                    .padding(8)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isDropTargeted)
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+            handleDroppedFiles(providers)
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
