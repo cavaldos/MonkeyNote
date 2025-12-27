@@ -29,11 +29,13 @@ enum SuggestionMode: String, CaseIterable {
 enum SettingsTab: String, CaseIterable {
     case appearance = "Appearance"
     case autocomplete = "Autocomplete"
+    case about = "About"
     
     var icon: String {
         switch self {
         case .appearance: return "paintbrush"
         case .autocomplete: return "text.cursor"
+        case .about: return "info.circle"
         }
     }
 }
@@ -113,10 +115,13 @@ struct SettingsView: View {
                             appearanceContent
                         case .autocomplete:
                             autocompleteContent
+                        case .about:
+                            aboutContent
                         }
                     }
                     .padding(20)
                 }
+                .scrollIndicators(.hidden)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(minWidth: 500, minHeight: 400)
@@ -387,6 +392,68 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                 }
             }
+            
+            Spacer()
+        }
+    }
+    
+    // MARK: - About Tab
+    private var aboutContent: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(spacing: 16) {
+                Image(nsImage: NSImage(named: "AppIcon") ?? NSImage())
+                    .resizable()
+                    .frame(width: 96, height: 96)
+                    .cornerRadius(16)
+                
+                VStack(spacing: 4) {
+                    Text("MonkeyNote")
+                        .font(.system(size: 24, weight: .bold))
+                    Text("Version 1.0.0")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 20)
+            
+            Divider()
+            
+            VStack(spacing: 12) {
+                Button(action: {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/cavaldos/MonkeyNote")!)
+                }) {
+                    Text("Contribute")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .frame(width: 150)
+                
+                Button(action: {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/cavaldos/MonkeyNote/issues")!)
+                }) {
+                    Text("Report a Bug")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .frame(width: 150)
+                
+                Button(action: {
+                    NSWorkspace.shared.open(URL(string: "https://ko-fi.com/calvados")!)
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 12))
+                        Text("Support me")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .frame(width: 150)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        
             
             Spacer()
         }
