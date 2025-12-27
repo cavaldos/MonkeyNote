@@ -154,7 +154,7 @@ struct ContentView: View {
     // Save delay status
     @State private var saveStatus: SaveStatus = .idle
     @State private var saveTask: Task<Void, Never>?
-    private let saveDelay: TimeInterval = 10.0
+    private let saveDelay: TimeInterval = 2.0 // delay save in seconds
     
     // Drag & Drop state
     @State private var dragOverFolderID: NoteFolder.ID?
