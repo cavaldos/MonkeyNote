@@ -156,6 +156,9 @@ struct ContentView: View {
     @State private var saveTask: Task<Void, Never>?
     private let saveDelay: TimeInterval = 2.0 // delay save in seconds
     
+    // Flag to prevent double save when changing vault
+    @State private var isChangingVault: Bool = false
+    
     // Drag & Drop state
     @State private var dragOverFolderID: NoteFolder.ID?
     
@@ -300,13 +303,45 @@ struct ContentView: View {
             )
         }
         .sheet(isPresented: $showSettings) {
-            SettingsView(vaultManager: vaultManager)
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
+            SettingsView(
+                vaultManager: vaultManager,
+                onVaultChanged: {
+                    // Save current vault before switching
+                    print("💾 Saving current vault before change...")
+                    isChangingVault = true
+                    saveTask?.cancel()
+                    saveAllToDisk()
+                }
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
+        .onChange(of: vaultManager.vaultURL) { _, newURL in
+            // Reset folders state when vault changes
+            print("🔄 Vault changed, resetting folders...")
+            isChangingVault = false  // Reset flag after vault changed
+            folders = []
+            selectedFolderID = nil
+            selectedNoteID = nil
+            searchText = ""
+            trashItems = []
+            
+            // Load new vault
+            loadFromVault()
+            ensureInitialSelection()
+            refreshTrash()
+            
+            print("📂 Switched to vault: \(newURL?.path ?? "none")")
+        }
         .onDisappear {
             // Cancel pending save task and save immediately when view disappears
+            // Skip save if we're just changing vault (already saved)
+            guard !isChangingVault else {
+                print("⏭️ Skipping save - vault is changing")
+                return
+            }
+            
             saveTask?.cancel()
             saveAllToDisk()
         }

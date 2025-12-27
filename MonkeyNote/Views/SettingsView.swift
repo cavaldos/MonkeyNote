@@ -57,6 +57,7 @@ struct SettingsView: View {
 
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var vaultManager: VaultManager
+    var onVaultChanged: (() -> Void)? = nil
     
     @State private var selectedTab: SettingsTab = .appearance
 
@@ -489,6 +490,10 @@ struct SettingsView: View {
         panel.message = "Choose a folder to store your markdown notes"
         
         if panel.runModal() == .OK, let url = panel.url {
+            // Save current vault before changing
+            onVaultChanged?()
+            
+            // Then change vault
             vaultManager.setVault(url: url)
         }
     }
