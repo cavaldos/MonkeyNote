@@ -189,6 +189,12 @@ struct ContentView: View {
     @AppStorage("note.autocompleteOpacity") private var autocompleteOpacity: Double = 0.5
     @AppStorage("note.suggestionMode") private var suggestionMode: String = "word"
     @AppStorage("note.markdownRenderEnabled") private var markdownRenderEnabled: Bool = true
+    @AppStorage("note.sortOption") private var sortOptionRaw: String = NoteSortOption.dateNewest.rawValue
+    
+    private var sortOption: NoteSortOption {
+        get { NoteSortOption(rawValue: sortOptionRaw) ?? .dateNewest }
+        set { sortOptionRaw = newValue.rawValue }
+    }
 
     private var selectedFolderPath: [Int]? {
         guard let selectedFolderID = selectedFolderID else { return nil }
@@ -890,9 +896,19 @@ struct ContentView: View {
                     ForEach(filteredNotes(in: folder)) { note in
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
-                                highlightedText(note.title, searchText: searchText)
-                                    .font(.system(.body, design: .monospaced))
-                                    .lineLimit(1)
+                                HStack(spacing: 4) {
+                                    // Pin icon
+                                    if note.isPinned {
+                                        Image(systemName: "pin.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.orange)
+                                    }
+                                    
+                                    highlightedText(note.title, searchText: searchText)
+                                        .font(.system(.body, design: .monospaced))
+                                        .lineLimit(1)
+                                }
+                                
                                 highlightedText(notePreview(for: note.text), searchText: searchText)
                                     .font(.system(.footnote, design: .monospaced))
                                     .foregroundStyle(.secondary)
@@ -919,6 +935,15 @@ struct ContentView: View {
                         .draggable(note.id.uuidString) // Drag note
                         .contextMenu {
                             Button {
+                                togglePinNote(noteID: note.id)
+                            } label: {
+                                Label(note.isPinned ? "Unpin Note" : "Pin Note", 
+                                      systemImage: note.isPinned ? "pin.slash" : "pin")
+                            }
+                            
+                            Divider()
+                            
+                            Button {
                                 startRenameNote(noteID: note.id)
                             } label: {
                                 Text("Rename Note")
@@ -944,12 +969,81 @@ struct ContentView: View {
         .navigationTitle(selectedFolderID == nil ? "Notes" : (getFolder(folderID: selectedFolderID!)?.name ?? "Notes"))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    addNote()
-                } label: {
-                    Image(systemName: "square.and.pencil")
+                HStack(spacing: 8) {
+                    // Sort menu
+                    Menu {
+                        Button {
+                            sortOptionRaw = NoteSortOption.nameAscending.rawValue
+                        } label: {
+                            if sortOption == .nameAscending {
+                                Label("Name A-Z", systemImage: "checkmark")
+                            } else {
+                                Text("Name A-Z")
+                            }
+                        }
+                        
+                        Button {
+                            sortOptionRaw = NoteSortOption.nameDescending.rawValue
+                        } label: {
+                            if sortOption == .nameDescending {
+                                Label("Name Z-A", systemImage: "checkmark")
+                            } else {
+                                Text("Name Z-A")
+                            }
+                        }
+                        
+                        Button {
+                            sortOptionRaw = NoteSortOption.dateNewest.rawValue
+                        } label: {
+                            if sortOption == .dateNewest {
+                                Label("Date Newest", systemImage: "checkmark")
+                            } else {
+                                Text("Date Newest")
+                            }
+                        }
+                        
+                        Button {
+                            sortOptionRaw = NoteSortOption.dateOldest.rawValue
+                        } label: {
+                            if sortOption == .dateOldest {
+                                Label("Date Oldest", systemImage: "checkmark")
+                            } else {
+                                Text("Date Oldest")
+                            }
+                        }
+                        
+                        Button {
+                            sortOptionRaw = NoteSortOption.createdNewest.rawValue
+                        } label: {
+                            if sortOption == .createdNewest {
+                                Label("Created Newest", systemImage: "checkmark")
+                            } else {
+                                Text("Created Newest")
+                            }
+                        }
+                        
+                        Button {
+                            sortOptionRaw = NoteSortOption.createdOldest.rawValue
+                        } label: {
+                            if sortOption == .createdOldest {
+                                Label("Created Oldest", systemImage: "checkmark")
+                            } else {
+                                Text("Created Oldest")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
+                    }
+                    .help("Sort notes")
+                    
+                    // Add note button
+                    Button {
+                        addNote()
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                    }
+                    .disabled(selectedFolderID == nil)
                 }
-                .disabled(selectedFolderID == nil)
             }
         }
         .alert("File Too Large", isPresented: $showLargeFileAlert) {
@@ -1257,6 +1351,22 @@ struct ContentView: View {
         saveAllToDisk()
     }
 
+    private func togglePinNote(noteID: NoteItem.ID) {
+        guard let selectedFolderID = selectedFolderID else { return }
+        
+        updateFolder(folderID: selectedFolderID) { folder in
+            guard let noteIndex = folder.notes.firstIndex(where: { $0.id == noteID }) else { return }
+            folder.notes[noteIndex].isPinned.toggle()
+        }
+        saveAllToDisk()
+        
+        #if os(macOS)
+        triggerHaptic(.generic)
+        #else
+        triggerHaptic(.light)
+        #endif
+    }
+    
     private func deleteSelectedNote() {
         guard let selectedNoteID = selectedNoteID else { return }
         deleteNote(noteID: selectedNoteID)
@@ -1287,10 +1397,34 @@ struct ContentView: View {
     private func filteredNotes(in folder: NoteFolder) -> [NoteItem] {
         let notes = folder.notes
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return notes }
-
-        return notes.filter { note in
+        
+        // Filter by search text
+        let filtered = q.isEmpty ? notes : notes.filter { note in
             note.title.localizedCaseInsensitiveContains(q) || note.text.localizedCaseInsensitiveContains(q)
+        }
+        
+        // Sort: pinned notes first, then by selected sort option
+        return filtered.sorted { note1, note2 in
+            // Pinned notes always come first
+            if note1.isPinned != note2.isPinned {
+                return note1.isPinned
+            }
+            
+            // Within pinned/unpinned groups, apply sort option
+            switch sortOption {
+            case .nameAscending:
+                return note1.title.localizedCaseInsensitiveCompare(note2.title) == .orderedAscending
+            case .nameDescending:
+                return note1.title.localizedCaseInsensitiveCompare(note2.title) == .orderedDescending
+            case .dateNewest:
+                return note1.updatedAt > note2.updatedAt
+            case .dateOldest:
+                return note1.updatedAt < note2.updatedAt
+            case .createdNewest:
+                return note1.createdAt > note2.createdAt
+            case .createdOldest:
+                return note1.createdAt < note2.createdAt
+            }
         }
     }
 
