@@ -23,57 +23,48 @@ MonkeyNote is a minimalist, native macOS note-taking application built with Swif
 > **Quick demo:** watch a short recording of MonkeyNote in action.
 
 <p align="center">
-  <a href="doc/Screen%20Recording.mov">
-    <img src="doc/icon.png" alt="Demo thumbnail" width="600"/>
-  </a>
+  <img src="doc/demo.gif" alt="MonkeyNote Demo" width="600"/>
 </p>
 
-<details>
-<summary>Play video (in-browser)</summary>
+## Screenshot
 
-<video controls width="100%" style="max-width:720px">
-  <source src="doc/Screen Recording.mov" type="video/quicktime">
-  Your browser doesn't support embedded video. Click the thumbnail above to download the video.
-</video>
-</details>
+<p align="center">
+  <img src="doc/image.png" alt="MonkeyNote Screenshot" width="400"/>
+</p>
 
 ## ✨ Features
 
 - **Hierarchical Organization**: Create unlimited nested folders to organize your notes
 - **Markdown Rendering**: Real-time markdown syntax highlighting and rendering
+- **Obsidian**: Totally using Obsidian-style markdown syntax
 - **Custom Cursor**: Configurable cursor width, blinking, and animation settings
 - **Smart Autocomplete**: Intelligent word and line completion with customizable delay
 - **Powerful Search**: Fast in-document search with match navigation
-- **Dark/Light Mode**: Beautiful native themes optimized for both modes
 - **Drag & Drop**: Intuitive drag-and-drop support for notes and folders
-- **Auto-Save**: Automatic note saving with delayed persistence (10 seconds)
-- **Trash Management**: Built-in trash system with restore functionality
-- **Statistics Tracking**: Real-time word, line, and character count
-- **Font Customization**: Choose from monospaced, rounded, or serif fonts
-- **Note Preview**: Quick preview of note content in the list view
-- **Keyboard Shortcuts**: Efficient keyboard navigation (⌘F for search)
+
 
 ## 📋 Requirements
 
 - macOS 15.7 or later
 - Xcode 16.2 or later (for building from source)
 
+## Run from Source
+
+   ```bash
+   ./run.sh
+   ```
+
 ## 🚀 Installation
 
 ### Download Pre-built App
 
-1. Download the latest `MonkeyNote.dmg` from the [Releases](https://github.com/yourusername/MonkeyNote/releases) page
-2. Open the DMG file
-3. Drag **MonkeyNote** to your **Applications** folder
-4. Launch MonkeyNote from Applications
+- Download the latest `MonkeyNote.dmg` from the [Releases](https://github.com/cavaldos/MonkeyNote/releases) page
+
 
 > **Note**: If macOS shows "app cannot be opened", go to **System Settings > Privacy & Security** and click **Open Anyway**.
 
 ### Build from Source
 
-See [Build Instructions](#-build-instructions) below.
-
-## 🔧 Build Instructions
 
 ### Option 1: Using Build Script (Easiest)
 
@@ -97,7 +88,6 @@ This script will automatically:
 5. Press `⌘ + Shift + K` then `⌘ + B` to clean and rebuild (if needed)
 6. Select **Product > Show Build Folder in Finder**
 7. Navigate to `Products/Release/` to find `MonkeyNote.app`
-8. Optionally follow the [Create DMG](#-create-dmg-for-distribution) section below
 
 #### Building for distribution (with Archive):
 
@@ -105,53 +95,12 @@ This script will automatically:
 2. Select **Product > Archive** to create a release build
 3. In the Organizer window, select the archive and click **Distribute App > Copy App**
 4. Choose a destination folder to export the app
-5. Optionally follow the [Create DMG](#-create-dmg-for-distribution) section below
-
-### Option 3: Using Command Line
-
-```bash
-# Build the app
-xcodebuild -project MonkeyNote.xcodeproj \
-  -scheme MonkeyNote \
-  -configuration Release \
-  build
-
-# The built app will be located at:
-# ~/Library/Developer/Xcode/DerivedData/MonkeyNote-*/Build/Products/Release/MonkeyNote.app
-```
-
-## 📦 Create DMG for Distribution
-
-After building, create a DMG file for easy distribution:
-
-```bash
-# Create a temporary folder
-mkdir -p /tmp/MonkeyNote-dmg
-
-# Copy the app
-cp -R ~/Library/Developer/Xcode/DerivedData/MonkeyNote-*/Build/Products/Release/MonkeyNote.app \
-  /tmp/MonkeyNote-dmg/
-
-# Add Applications shortcut (optional, for drag-and-drop install)
-ln -sf /Applications /tmp/MonkeyNote-dmg/Applications
-
-# Create DMG
-hdiutil create \
-  -volname "MonkeyNote" \
-  -srcfolder /tmp/MonkeyNote-dmg \
-  -ov -format UDZO \
-  MonkeyNote.dmg
-
-# Cleanup
-rm -rf /tmp/MonkeyNote-dmg
-```
 
 ## ⚙️ Configuration
 
 MonkeyNote stores all notes and settings in your local file system:
 
 - **Notes location**: `~/Documents/MonkeyNote/`
-- **Trash location**: `~/Documents/MonkeyNote/.trash/`
 - **Settings**: Stored in UserDefaults
 
 ### Customizable Settings
@@ -175,58 +124,6 @@ Access settings via the gear icon in the sidebar:
 | `⏎` (in search) | Navigate to next match |
 | `ESC` (in search) | Close search and return to editor |
 
-## 🛠️ Development
-
-### Architecture
-
-MonkeyNote follows the MVVM (Model-View-ViewModel) architecture pattern:
-
-- **Models**: `NoteModels.swift`, `VaultManager.swift` handle data structures and persistence
-- **Views**: SwiftUI views for UI components
-- **Components**: Reusable UI components and custom text editor
-
-### Key Technologies
-
-- **SwiftUI**: Modern declarative UI framework
-- **AppKit**: Native macOS text system integration
-- **FileManager**: File system operations
-- **Combine**: Reactive programming for state management
-
-### Building & Testing
-
-```bash
-# Build in debug mode
-xcodebuild -project MonkeyNote.xcodeproj \
-  -scheme MonkeyNote \
-  -configuration Debug \
-  build
-
-# Run tests (if available)
-xcodebuild test \
-  -project MonkeyNote.xcodeproj \
-  -scheme MonkeyNote
-```
-
-## 🐛 Troubleshooting
-
-### Large Files Warning
-
-MonkeyNote limits file size to 5,000 lines to maintain performance. Files exceeding this limit will show a warning icon and cannot be opened directly.
-
-### Vault Location Issues
-
-If notes don't appear, check:
-1. Vault location in Settings
-2. File permissions for the vault directory
-3. Check trash folder for accidentally deleted notes
-
-### Performance Issues
-
-If the app feels sluggish:
-1. Disable markdown rendering for large documents
-2. Reduce autocomplete delay
-3. Check for very large note files
-
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -241,6 +138,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 <div align="center">
 
-[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/MonkeyNote&type=Date)](https://star-history.com/#yourusername/MonkeyNote&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=cavaldos/MonkeyNote&type=Date)](https://star-history.com/#cavaldos/MonkeyNote&Date)
 
 </div>
