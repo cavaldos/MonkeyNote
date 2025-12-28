@@ -35,6 +35,36 @@ enum ToolbarAction: String, CaseIterable {
         }
     }
     
+    var tooltipName: String {
+        switch self {
+        case .heading: return "Heading"
+        case .bold: return "Bold"
+        case .italic: return "Italic"
+        case .code: return "Mark as code"
+        case .strikethrough: return "Strikethrough"
+        case .highlight: return "Highlight"
+        case .link: return "Link"
+        case .alignLeft: return "Align left"
+        case .list: return "Bulleted list"
+        }
+    }
+    
+    var shortcutHint: String? {
+        switch self {
+        case .bold: return "⌘B"
+        case .italic: return "⌘I"
+        case .code: return "⌘E"
+        default: return nil
+        }
+    }
+    
+    var tooltipText: String {
+        if let shortcut = shortcutHint {
+            return "\(tooltipName)\n\(shortcut)"
+        }
+        return tooltipName
+    }
+    
     var markdownPrefix: String {
         switch self {
         case .bold: return "**"
@@ -129,7 +159,7 @@ struct SelectionToolbarView: View {
     @State private var hoveredAction: ToolbarAction?
     
     private let mainActions: [ToolbarAction] = [
-        .heading, .bold, .italic, .code, .strikethrough, .highlight, .link, .alignLeft, .list
+        .bold, .italic, .code, .strikethrough, .highlight, .link, .alignLeft, .list
     ]
     
     var body: some View {
@@ -140,16 +170,12 @@ struct SelectionToolbarView: View {
                 } label: {
                     Group {
                         if action == .code {
-                            // Special style for code - similar to image reference
+                            // Special style for code - red color only
                             Text("</>")
                                 .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .foregroundColor(Color(red: 0.95, green: 0.45, blue: 0.45)) // Reddish/coral color
-                                .padding(.horizontal, 10)
+                                .foregroundColor(Color(red: 0.95, green: 0.45, blue: 0.45))
+                                .padding(.horizontal, 8)
                                 .padding(.vertical, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color(red: 0.15, green: 0.15, blue: 0.17))
-                                )
                         } else {
                             Image(systemName: action.icon)
                                 .font(.system(size: 14, weight: action == .bold ? .bold : .regular))
@@ -158,16 +184,13 @@ struct SelectionToolbarView: View {
                         }
                     }
                     .background(
-                        Group {
-                            if action != .code {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(hoveredAction == action ? Color.white.opacity(0.15) : Color.clear)
-                            }
-                        }
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(hoveredAction == action ? Color.white.opacity(0.15) : Color.clear)
                     )
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(action == .code ? Color(red: 0.95, green: 0.45, blue: 0.45) : .white.opacity(0.9))
+                .help(action.tooltipText)
                 .onHover { isHovered in
                     hoveredAction = isHovered ? action : nil
                 }
@@ -180,11 +203,11 @@ struct SelectionToolbarView: View {
                 }
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: NSColor(red: 0.18, green: 0.18, blue: 0.2, alpha: 0.98)))
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(nsColor: NSColor(red: 0.25, green: 0.25, blue: 0.27, alpha: 0.98))) //corlor background selection toolbar
                 .shadow(color: .black.opacity(0.4), radius: 12, x: 0, y: 4)
         )
     }

@@ -705,6 +705,26 @@ private class ThickCursorTextView: NSTextView {
             }
         }
         
+        // Handle formatting shortcuts (Cmd+B, Cmd+I, Cmd+E)
+        if event.modifierFlags.contains(.command) {
+            let selectedRange = self.selectedRange()
+            if selectedRange.length > 0 {
+                switch event.charactersIgnoringModifiers?.lowercased() {
+                case "b":
+                    applyFormatting(action: .bold, range: selectedRange)
+                    return
+                case "i":
+                    applyFormatting(action: .italic, range: selectedRange)
+                    return
+                case "e":
+                    applyFormatting(action: .code, range: selectedRange)
+                    return
+                default:
+                    break
+                }
+            }
+        }
+        
         guard !event.isARepeat else {
             super.keyDown(with: event)
             return
@@ -1052,66 +1072,112 @@ private class ThickCursorTextView: NSTextView {
         let text = self.string as NSString
         let selectedText = text.substring(with: range)
         
-        var newText = selectedText
+        // Get prefix and suffix for the action
+        let (prefix, suffix) = getMarkdownSyntax(for: action)
         
+        // Skip actions without prefix/suffix (handled separately)
+        guard !prefix.isEmpty else {
+            handleSpecialFormatting(action: action, range: range, text: text)
+            return
+        }
+        
+        // Check if formatting should be toggled off
+        // Case 1: Selected text is wrapped with syntax (e.g., "**text**" selected)
+        if selectedText.hasPrefix(prefix) && selectedText.hasSuffix(suffix) && selectedText.count >= prefix.count + suffix.count {
+            let strippedText = String(selectedText.dropFirst(prefix.count).dropLast(suffix.count))
+            performUndoableReplacement(in: range, with: strippedText)
+            setSelectedRange(NSRange(location: range.location, length: strippedText.utf16.count))
+            return
+        }
+        
+        // Case 2: Text outside selection has the syntax (e.g., **"text"** where "text" is selected)
+        let prefixLength = prefix.utf16.count
+        let suffixLength = suffix.utf16.count
+        
+        if range.location >= prefixLength {
+            let beforeRange = NSRange(location: range.location - prefixLength, length: prefixLength)
+            let afterLocation = range.location + range.length
+            
+            if afterLocation + suffixLength <= text.length {
+                let afterRange = NSRange(location: afterLocation, length: suffixLength)
+                let beforeText = text.substring(with: beforeRange)
+                let afterText = text.substring(with: afterRange)
+                
+                if beforeText == prefix && afterText == suffix {
+                    // Remove the surrounding syntax
+                    let fullRange = NSRange(location: beforeRange.location, length: prefixLength + range.length + suffixLength)
+                    performUndoableReplacement(in: fullRange, with: selectedText)
+                    setSelectedRange(NSRange(location: beforeRange.location, length: selectedText.utf16.count))
+                    return
+                }
+            }
+        }
+        
+        // Not formatted yet, add formatting
+        let newText = "\(prefix)\(selectedText)\(suffix)"
+        performUndoableReplacement(in: range, with: newText)
+        
+        // Select the text inside the formatting (without syntax)
+        let newSelectionStart = range.location + prefix.utf16.count
+        setSelectedRange(NSRange(location: newSelectionStart, length: selectedText.utf16.count))
+    }
+    
+    /// Returns the prefix and suffix for a given formatting action
+    private func getMarkdownSyntax(for action: ToolbarAction) -> (prefix: String, suffix: String) {
         switch action {
         case .bold:
-            newText = "**\(selectedText)**"
+            return ("**", "**")
         case .italic:
-            newText = "_\(selectedText)_"
+            return ("_", "_")
         case .code:
-            newText = "`\(selectedText)`"
+            return ("`", "`")
         case .strikethrough:
-            newText = "~~\(selectedText)~~"
+            return ("~~", "~~")
         case .highlight:
-            newText = "==\(selectedText)=="
+            return ("==", "==")
         case .link:
-            newText = "[\(selectedText)](url)"
+            return ("[", "](url)")
+        default:
+            return ("", "")
+        }
+    }
+    
+    /// Handle special formatting actions (heading, list, alignLeft)
+    private func handleSpecialFormatting(action: ToolbarAction, range: NSRange, text: NSString) {
+        switch action {
         case .heading:
-            // Add heading marker at the beginning of line
             let lineRange = text.lineRange(for: range)
             let lineStart = lineRange.location
             let currentLine = text.substring(with: lineRange)
             
             if currentLine.hasPrefix("### ") {
-                // Remove heading
                 performUndoableReplacement(in: NSRange(location: lineStart, length: 4), with: "")
             } else if currentLine.hasPrefix("## ") {
-                // H2 -> H3
                 performUndoableReplacement(in: NSRange(location: lineStart, length: 3), with: "### ")
             } else if currentLine.hasPrefix("# ") {
-                // H1 -> H2
                 performUndoableReplacement(in: NSRange(location: lineStart, length: 2), with: "## ")
             } else {
-                // Add H1
                 performUndoableReplacement(in: NSRange(location: lineStart, length: 0), with: "# ")
             }
-            return
+            
         case .list:
-            // Add bullet at the beginning of line
             let lineRange = text.lineRange(for: range)
             let lineStart = lineRange.location
             let currentLine = text.substring(with: lineRange)
             
             if currentLine.hasPrefix("• ") || currentLine.hasPrefix("- ") {
-                // Remove bullet
                 performUndoableReplacement(in: NSRange(location: lineStart, length: 2), with: "")
             } else {
-                // Add bullet
                 performUndoableReplacement(in: NSRange(location: lineStart, length: 0), with: "• ")
             }
-            return
+            
         case .alignLeft:
             // Alignment is not typically supported in plain markdown
-            return
+            break
+            
+        default:
+            break
         }
-        
-        // Replace selected text with formatted text (with undo support)
-        performUndoableReplacement(in: range, with: newText)
-        
-        // Update cursor position
-        let newCursorPosition = range.location + newText.utf16.count
-        setSelectedRange(NSRange(location: newCursorPosition, length: 0))
     }
     
     /// Performs a text replacement with proper undo support that doesn't restore selection state
