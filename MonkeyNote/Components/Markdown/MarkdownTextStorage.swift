@@ -54,9 +54,12 @@ class MarkdownTextStorage: NSTextStorage {
     
     // MARK: - Debounce Properties
     private var debounceTimer: Timer?
-    private let debounceDelay: TimeInterval = 0.3 // 300ms delay
+    private let debounceDelay: TimeInterval = 0.15 // 150ms delay for full re-parse
     private var pendingEditedRange: NSRange?
     private var hasPendingFullParse: Bool = false
+    
+    // Track last cursor line to detect line changes
+    private var lastCursorLine: Int = -1
     
     // MARK: - Incremental Parsing Cache
     // Cache matches by paragraph index for incremental updates
@@ -124,20 +127,25 @@ class MarkdownTextStorage: NSTextStorage {
     // MARK: - Processing
     
     override func processEditing() {
-        // Store the edited range for incremental processing
+        // Store the edited range for processing
         let editedRange = self.editedRange
+        let changeInLength = self.changeInLength
         
         // Cancel any pending debounce timer
         debounceTimer?.invalidate()
         
-        // Apply basic styling immediately to the edited range (fast, O(1))
-        if !isProcessing && backingStore.length > 0 {
+        // Apply immediate markdown styling to the edited line only (no flicker)
+        if !isProcessing && backingStore.length > 0 && markdownRenderEnabled {
             isProcessing = true
-            applyBaseStylingToRange(editedRange)
+            applyImmediateMarkdownStyling(editedRange: editedRange, changeInLength: changeInLength)
             isProcessing = false
+        } else if !isProcessing && backingStore.length > 0 {
+            // Markdown disabled - just apply base styling to new characters
+            applyBaseStylingToRange(editedRange)
         }
         
-        // Schedule debounced full markdown processing
+        // Schedule debounced full markdown processing for complex cases
+        // (multi-line edits, paste operations, etc.)
         hasPendingFullParse = true
         pendingEditedRange = editedRange
         
@@ -180,17 +188,150 @@ class MarkdownTextStorage: NSTextStorage {
     private func applyBaseStylingToRange(_ range: NSRange) {
         guard range.location + range.length <= backingStore.length else { return }
         
-        // Expand range to cover the entire affected line(s)
-        let text = backingStore.string as NSString
-        let lineRange = text.lineRange(for: range)
-        
-        guard lineRange.location + lineRange.length <= backingStore.length else { return }
+        // Only apply to the specific range, not the entire line
+        guard range.length > 0 else { return }
         
         // Apply base styling only - no markdown parsing
         backingStore.setAttributes([
             .font: baseFont,
             .foregroundColor: baseTextColor
-        ], range: lineRange)
+        ], range: range)
+    }
+    
+    // MARK: - Immediate Markdown Styling (No Flicker)
+    
+    /// Apply markdown styling immediately to the edited line without causing flicker.
+    /// This preserves existing styling and only updates what's necessary.
+    private func applyImmediateMarkdownStyling(editedRange: NSRange, changeInLength: Int) {
+        guard backingStore.length > 0 else { return }
+        
+        let text = backingStore.string as NSString
+        
+        // Get the line range that contains the edit
+        let lineRange = text.lineRange(for: editedRange)
+        guard lineRange.location + lineRange.length <= backingStore.length else { return }
+        
+        // For single character insertions (typical typing), use smart incremental update
+        if changeInLength == 1 && editedRange.length == 1 {
+            // Apply base styling only to the new character
+            backingStore.setAttributes([
+                .font: baseFont,
+                .foregroundColor: baseTextColor
+            ], range: editedRange)
+            
+            // Re-parse and apply styling to the current line only
+            let lineText = text.substring(with: lineRange)
+            let localMatches = parser.parse(lineText)
+            
+            // Apply styling to matches within this line
+            for match in localMatches {
+                let globalRange = NSRange(
+                    location: match.range.location + lineRange.location,
+                    length: match.range.length
+                )
+                let globalContentRange = NSRange(
+                    location: match.contentRange.location + lineRange.location,
+                    length: match.contentRange.length
+                )
+                let globalSyntaxRanges = match.syntaxRanges.map { syntaxRange in
+                    NSRange(
+                        location: syntaxRange.location + lineRange.location,
+                        length: syntaxRange.length
+                    )
+                }
+                
+                // Validate ranges
+                guard globalRange.location + globalRange.length <= backingStore.length,
+                      globalContentRange.location + globalContentRange.length <= backingStore.length else {
+                    continue
+                }
+                
+                let globalMatch = MarkdownMatch(
+                    range: globalRange,
+                    contentRange: globalContentRange,
+                    style: match.style,
+                    syntaxRanges: globalSyntaxRanges,
+                    url: match.url
+                )
+                
+                applyMatchStyling(globalMatch, cursorInRange: isCursorInMatch(globalMatch))
+            }
+            
+            // Update cached matches for this line
+            updateCachedMatchesForLine(lineRange: lineRange, newMatches: localMatches)
+            
+        } else if changeInLength < 0 {
+            // Deletion: re-parse the affected line
+            let lineText = text.substring(with: lineRange)
+            
+            // Reset the line to base styling first
+            backingStore.setAttributes([
+                .font: baseFont,
+                .foregroundColor: baseTextColor
+            ], range: lineRange)
+            
+            // Re-parse and apply
+            let localMatches = parser.parse(lineText)
+            for match in localMatches {
+                let globalMatch = offsetMatch(match, by: lineRange.location)
+                guard globalMatch.range.location + globalMatch.range.length <= backingStore.length else { continue }
+                applyMatchStyling(globalMatch, cursorInRange: isCursorInMatch(globalMatch))
+            }
+            
+            updateCachedMatchesForLine(lineRange: lineRange, newMatches: localMatches)
+            
+        } else {
+            // Multi-character insertion (paste): apply base styling and re-parse
+            let affectedRange = NSRange(location: editedRange.location, length: editedRange.length)
+            guard affectedRange.location + affectedRange.length <= backingStore.length else { return }
+            
+            // Get expanded paragraph range for multi-line pastes
+            let paragraphRange = text.paragraphRange(for: affectedRange)
+            guard paragraphRange.location + paragraphRange.length <= backingStore.length else { return }
+            
+            // Reset and re-parse
+            backingStore.setAttributes([
+                .font: baseFont,
+                .foregroundColor: baseTextColor
+            ], range: paragraphRange)
+            
+            let paragraphText = text.substring(with: paragraphRange)
+            let localMatches = parser.parse(paragraphText)
+            
+            for match in localMatches {
+                let globalMatch = offsetMatch(match, by: paragraphRange.location)
+                guard globalMatch.range.location + globalMatch.range.length <= backingStore.length else { continue }
+                applyMatchStyling(globalMatch, cursorInRange: isCursorInMatch(globalMatch))
+            }
+        }
+    }
+    
+    /// Offset a match's ranges by a given amount
+    private func offsetMatch(_ match: MarkdownMatch, by offset: Int) -> MarkdownMatch {
+        return MarkdownMatch(
+            range: NSRange(location: match.range.location + offset, length: match.range.length),
+            contentRange: NSRange(location: match.contentRange.location + offset, length: match.contentRange.length),
+            style: match.style,
+            syntaxRanges: match.syntaxRanges.map { NSRange(location: $0.location + offset, length: $0.length) },
+            url: match.url
+        )
+    }
+    
+    /// Update cached matches for a specific line
+    private func updateCachedMatchesForLine(lineRange: NSRange, newMatches: [MarkdownMatch]) {
+        // Remove old matches that overlap with this line
+        cachedMatches.removeAll { match in
+            NSIntersectionRange(match.range, lineRange).length > 0
+        }
+        
+        // Add new matches with global positions
+        for match in newMatches {
+            let globalMatch = offsetMatch(match, by: lineRange.location)
+            cachedMatches.append(globalMatch)
+        }
+        
+        // Keep sorted
+        cachedMatches.sort { $0.range.location < $1.range.location }
     }
     
     // MARK: - Incremental Markdown Styling

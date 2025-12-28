@@ -665,16 +665,11 @@ private class ThickCursorTextView: NSTextView {
     private func handleSlashCommand(_ command: SlashCommand) {
         guard let range = slashCommandRange else { return }
         
-        // Delete the "/" character and insert the list prefix
-        let text = self.string as NSString
-        let lineRange = text.lineRange(for: range)
-        let lineStart = lineRange.location
+        // Simply replace the "/" character with the command prefix
+        replaceCharacters(in: range, with: command.prefix)
         
-        // Replace from line start to after "/" with the command prefix
-        let rangeToReplace = NSRange(location: lineStart, length: range.location + range.length - lineStart)
-        replaceCharacters(in: rangeToReplace, with: command.prefix)
-        
-        let newCursorPosition = lineStart + command.prefix.utf16.count
+        // Set cursor position right after the inserted prefix
+        let newCursorPosition = range.location + command.prefix.utf16.count
         setSelectedRange(NSRange(location: newCursorPosition, length: 0))
         
         slashCommandRange = nil
