@@ -707,8 +707,14 @@ private class ThickCursorTextView: NSTextView {
             }
         }
         
-        // Handle formatting shortcuts (Cmd+B, Cmd+I, Cmd+E)
+        // Handle formatting shortcuts (Cmd+B, Cmd+I, Cmd+E) and Demo Mode (Cmd+Shift+D)
         if event.modifierFlags.contains(.command) {
+            // Demo Mode toggle: Cmd+Shift+D
+            if event.modifierFlags.contains(.shift) && event.charactersIgnoringModifiers?.lowercased() == "d" {
+                toggleDemoMode()
+                return
+            }
+            
             let selectedRange = self.selectedRange()
             if selectedRange.length > 0 {
                 switch event.charactersIgnoringModifiers?.lowercased() {
@@ -923,6 +929,22 @@ private class ThickCursorTextView: NSTextView {
     }
     
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
+        // Check for Demo Mode - intercept all typing
+        if DemoModeManager.shared.isEnabled {
+            if let nextChar = DemoModeManager.shared.getNextCharacter() {
+                super.insertText(nextChar, replacementRange: replacementRange)
+                
+                // Update cursor position in MarkdownTextStorage
+                if let textStorage = self.textStorage as? MarkdownTextStorage {
+                    textStorage.cursorPosition = self.selectedRange().location
+                }
+                return
+            } else {
+                // Demo text exhausted, just ignore input
+                return
+            }
+        }
+        
         guard let str = insertString as? String else {
             super.insertText(insertString, replacementRange: replacementRange)
             return
@@ -997,6 +1019,19 @@ private class ThickCursorTextView: NSTextView {
     }
     
     override func deleteBackward(_ sender: Any?) {
+        // Handle Demo Mode backspace
+        if DemoModeManager.shared.isEnabled {
+            if DemoModeManager.shared.handleBackspace() {
+                super.deleteBackward(sender)
+                
+                // Update cursor position in MarkdownTextStorage
+                if let textStorage = self.textStorage as? MarkdownTextStorage {
+                    textStorage.cursorPosition = self.selectedRange().location
+                }
+            }
+            return
+        }
+        
         super.deleteBackward(sender)
         
         // Update cursor position in MarkdownTextStorage
@@ -1201,6 +1236,54 @@ private class ThickCursorTextView: NSTextView {
         
         // Notify text did change
         didChangeText()
+    }
+    
+    // MARK: - Demo Mode
+    
+    private func toggleDemoMode() {
+        let demoManager = DemoModeManager.shared
+        
+        if demoManager.isEnabled {
+            // Disable demo mode
+            demoManager.disable()
+            print("Demo Mode: OFF")
+        } else {
+            // Enable demo mode - show dialog to enter demo text
+            showDemoTextDialog()
+        }
+    }
+    
+    private func showDemoTextDialog() {
+        let alert = NSAlert()
+        alert.messageText = "Demo Mode"
+        alert.informativeText = "Enter the text you want to type (press any key to type each character):"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Start")
+        alert.addButton(withTitle: "Cancel")
+        
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.font = NSFont.systemFont(ofSize: 13)
+        textView.backgroundColor = NSColor.textBackgroundColor
+        textView.textColor = NSColor.textColor
+        
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+        
+        alert.accessoryView = scrollView
+        
+        let response = alert.runModal()
+        
+        if response == .alertFirstButtonReturn {
+            let demoText = textView.string
+            if !demoText.isEmpty {
+                DemoModeManager.shared.enable(with: demoText)
+                print("Demo Mode: ON - Text length: \(demoText.count)")
+            }
+        }
     }
     
     // MARK: - Link Handling
