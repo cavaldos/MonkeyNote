@@ -738,11 +738,31 @@ private class ThickCursorTextView: NSTextView {
                         let isAtLineStart = prevCharIndex == lineRange.location
                         
                         if isAtLineStart {
-                            let rangeAfterChar = NSRange(location: prevCharIndex + 1, length: lineRange.location + lineRange.length - prevCharIndex - 1)
+                            // Calculate content length on this line only (exclude newline character)
+                            var lineContentLength = lineRange.length
+                            if lineRange.location + lineRange.length <= text.length {
+                                let lineContent = text.substring(with: lineRange)
+                                if lineContent.hasSuffix("\n") {
+                                    lineContentLength -= 1
+                                }
+                            }
+                            
+                            // Get remaining text on this line only (after "-" or ".")
+                            let afterCharStart = prevCharIndex + 1
+                            let afterCharLength = lineRange.location + lineContentLength - afterCharStart
+                            guard afterCharLength >= 0 else {
+                                // No content after "-" or "." on this line, just convert to bullet
+                                let rangeToReplace = NSRange(location: prevCharIndex, length: 1)
+                                self.replaceCharacters(in: rangeToReplace, with: "• ")
+                                self.setSelectedRange(NSRange(location: prevCharIndex + "• ".utf16.count, length: 0))
+                                return
+                            }
+                            
+                            let rangeAfterChar = NSRange(location: afterCharStart, length: afterCharLength)
                             let remainingText = text.substring(with: rangeAfterChar)
                             
-                            // Replace the entire line from dash/dot to end with bullet + remaining text
-                            let lineAfterChar = NSRange(location: prevCharIndex, length: lineRange.location + lineRange.length - prevCharIndex)
+                            // Replace the entire line from dash/dot to end of line content with bullet + remaining text
+                            let lineAfterChar = NSRange(location: prevCharIndex, length: 1 + afterCharLength)
                             let newText = "• " + remainingText.trimmingCharacters(in: .whitespacesAndNewlines)
                             self.replaceCharacters(in: lineAfterChar, with: newText)
                             self.setSelectedRange(NSRange(location: prevCharIndex + newText.utf16.count, length: 0))
@@ -756,11 +776,33 @@ private class ThickCursorTextView: NSTextView {
                         if let regex = try? NSRegularExpression(pattern: "^\\d\\.", options: []),
                            regex.firstMatch(in: twoCharsBefore, options: [], range: NSRange(location: 0, length: 2)) != nil {
                             let lineRange = text.lineRange(for: NSRange(location: prevCharIndex - 1, length: 0))
-                            let rangeAfterNumber = NSRange(location: prevCharIndex + 1, length: lineRange.location + lineRange.length - prevCharIndex - 1)
+                            
+                            // Calculate content length on this line only (exclude newline character)
+                            var lineContentLength = lineRange.length
+                            if lineRange.location + lineRange.length <= text.length {
+                                let lineContent = text.substring(with: lineRange)
+                                if lineContent.hasSuffix("\n") {
+                                    lineContentLength -= 1
+                                }
+                            }
+                            
+                            // Get remaining text on this line only (after "1.")
+                            let afterNumberStart = prevCharIndex + 1
+                            let afterNumberLength = lineRange.location + lineContentLength - afterNumberStart
+                            guard afterNumberLength >= 0 else {
+                                // No content after "1." on this line, just add space
+                                let lineAfterNumber = NSRange(location: prevCharIndex - 1, length: 2)
+                                let newText = twoCharsBefore + " "
+                                self.replaceCharacters(in: lineAfterNumber, with: newText)
+                                self.setSelectedRange(NSRange(location: prevCharIndex - 1 + newText.utf16.count, length: 0))
+                                return
+                            }
+                            
+                            let rangeAfterNumber = NSRange(location: afterNumberStart, length: afterNumberLength)
                             let remainingText = text.substring(with: rangeAfterNumber)
                             
-                            // Replace the entire line from number to end with proper numbered list format
-                            let lineAfterNumber = NSRange(location: prevCharIndex - 1, length: lineRange.location + lineRange.length - (prevCharIndex - 1))
+                            // Replace the number pattern and remaining text on this line only
+                            let lineAfterNumber = NSRange(location: prevCharIndex - 1, length: 2 + afterNumberLength)
                             let newText = twoCharsBefore + " " + remainingText.trimmingCharacters(in: .whitespacesAndNewlines)
                             self.replaceCharacters(in: lineAfterNumber, with: newText)
                             self.setSelectedRange(NSRange(location: prevCharIndex - 1 + newText.utf16.count, length: 0))
