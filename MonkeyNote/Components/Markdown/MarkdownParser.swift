@@ -295,8 +295,8 @@ extension MarkdownParser {
             // Try to get bold font, fallback to system bold if not available
             let boldFont = getBoldFont(from: baseFont)
             attributes[.font] = boldFont
-            // Add orange/yellow color to make bold more visible
-            attributes[.foregroundColor] = NSColor(red: 1.0, green: 0.8, blue: 0.2, alpha: 1.0) // Golden yellow
+            // Orange color for bold
+            attributes[.foregroundColor] = NSColor.customOrange
             
         case .italic:
             // Try to get italic font
@@ -331,20 +331,20 @@ extension MarkdownParser {
         case .heading1:
             let size = baseFont.pointSize * 1.6
             attributes[.font] = NSFont.systemFont(ofSize: size, weight: .bold)
-            // Brown color for all headings
-            attributes[.foregroundColor] = NSColor(red: 0.6, green: 0.4, blue: 0.2, alpha: 1.0)
+            // Green color for headings
+            attributes[.foregroundColor] = NSColor.customGreen
             
         case .heading2:
             let size = baseFont.pointSize * 1.4
             attributes[.font] = NSFont.systemFont(ofSize: size, weight: .bold)
-            // Brown color for all headings
-            attributes[.foregroundColor] = NSColor(red: 0.6, green: 0.4, blue: 0.2, alpha: 1.0)
+            // Green color for headings
+            attributes[.foregroundColor] = NSColor.customGreen
             
         case .heading3:
             let size = baseFont.pointSize * 1.2
             attributes[.font] = NSFont.systemFont(ofSize: size, weight: .semibold)
-            // Brown color for all headings
-            attributes[.foregroundColor] = NSColor(red: 0.6, green: 0.4, blue: 0.2, alpha: 1.0)
+            // Green color for headings
+            attributes[.foregroundColor] = NSColor.customGreen
             
         case .link:
             attributes[.foregroundColor] = NSColor.systemBlue
@@ -356,7 +356,7 @@ extension MarkdownParser {
             
         case .numberedList:
             // Purple color for numbered list markers (1. 2. 3. etc.)
-            attributes[.foregroundColor] = NSColor(red: 0.7, green: 0.4, blue: 0.9, alpha: 1.0) // Purple
+            attributes[.foregroundColor] = NSColor.customBlue
             
         case .bulletList:
             // Purple color for bullet markers (•)
