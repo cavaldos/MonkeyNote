@@ -691,9 +691,11 @@ private class ThickCursorTextView: NSTextView {
             case 53: // Escape
                 dismissSlashMenu()
                 return
-            default:
-                // Any other key dismisses menu
-                dismissSlashMenu()
+            default: 
+                // Any other key dismisses menu and stops processing
+                dismissSlashMenu() // fix return when menu is open
+                // Don't process the key that dismissed the menu
+                return
             }
         }
         
