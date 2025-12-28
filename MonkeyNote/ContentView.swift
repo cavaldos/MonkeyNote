@@ -140,6 +140,8 @@ struct ContentView: View {
     @State private var selectedNoteID: NoteItem.ID?
 
     @State private var searchText: String = ""
+    @State private var replaceText: String = ""
+    @State private var showReplaceMode: Bool = false
     
     // Search navigation state
     @State private var searchMatchCount: Int = 0
@@ -648,10 +650,153 @@ struct ContentView: View {
     
     private func closeSearch() {
         searchText = ""
+        replaceText = ""
+        showReplaceMode = false
         currentSearchIndex = 0
         searchMatchCount = 0
     }
+    
+    private func replaceCurrentMatch() {
+        guard let selectedNoteIndex = selectedNoteIndex,
+              let selectedFolderID = selectedFolderID,
+              !searchText.isEmpty else { return }
+        
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        updateFolder(folderID: selectedFolderID) { folder in
+            let currentText = folder.notes[selectedNoteIndex].text
+            
+            // Find all matches
+            let matches = findMatches(in: currentText, query: query)
+            guard currentSearchIndex < matches.count else { return }
+            
+            // Replace current match
+            let match = matches[currentSearchIndex]
+            let beforeMatch = currentText[currentText.startIndex..<match.lowerBound]
+            let afterMatch = currentText[match.upperBound..<currentText.endIndex]
+            
+            folder.notes[selectedNoteIndex].text = String(beforeMatch) + replaceText + String(afterMatch)
+            folder.notes[selectedNoteIndex].updatedAt = Date()
+        }
+        
+        saveAllToDisk()
+        
+        #if os(macOS)
+        triggerHaptic(.generic)
+        #else
+        triggerHaptic(.light)
+        #endif
+    }
+    
+    private func replaceAll() {
+        guard let selectedNoteIndex = selectedNoteIndex,
+              let selectedFolderID = selectedFolderID,
+              !searchText.isEmpty else { return }
+        
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        updateFolder(folderID: selectedFolderID) { folder in
+            let currentText = folder.notes[selectedNoteIndex].text
+            
+            // Replace all occurrences
+            folder.notes[selectedNoteIndex].text = currentText.replacingOccurrences(
+                of: query,
+                with: replaceText,
+                options: .caseInsensitive
+            )
+            folder.notes[selectedNoteIndex].updatedAt = Date()
+        }
+        
+        saveAllToDisk()
+        
+        #if os(macOS)
+        triggerHaptic(.generic)
+        #else
+        triggerHaptic(.medium)
+        #endif
+    }
+    
+    private func findMatches(in text: String, query: String) -> [Range<String.Index>] {
+        var matches: [Range<String.Index>] = []
+        var searchRange = text.startIndex..<text.endIndex
+        
+        while let range = text.range(of: query, options: .caseInsensitive, range: searchRange) {
+            matches.append(range)
+            searchRange = range.upperBound..<text.endIndex
+        }
+        
+        return matches
+    }
 
+    private var replaceBar: some View {
+        HStack(spacing: 6) {
+            // Spacer để align với search field
+            Spacer()
+                .frame(width: 11 + 6 + 11 + 6) // toggle button + spacing + magnifying glass + spacing
+            
+            Image(systemName: "arrow.left.arrow.right")
+                .foregroundStyle(.secondary)
+                .font(.system(size: 11))
+            
+            #if os(macOS)
+            TextField("Replace", text: $replaceText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .frame(width: 120)
+            #else
+            TextField("Replace", text: $replaceText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+            #endif
+            
+            if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Replace button
+                Button {
+                    replaceCurrentMatch()
+                } label: {
+                    Text("Replace")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.blue)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(searchMatchCount == 0)
+                .opacity(searchMatchCount == 0 ? 0.5 : 1.0)
+                
+                // Replace All button
+                Button {
+                    replaceAll()
+                } label: {
+                    Text("All")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.blue)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(searchMatchCount == 0)
+                .opacity(searchMatchCount == 0 ? 0.5 : 1.0)
+            }
+            
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
+        )
+    }
+    
     private var statusBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "doc.text")
@@ -1144,6 +1289,20 @@ struct ContentView: View {
                 
                 // Search field with results and navigation && search results
                 HStack(spacing: 6) {
+                    // Toggle replace button
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                            showReplaceMode.toggle()
+                        }
+                    } label: {
+                        Image(systemName: showReplaceMode ? "chevron.down.circle.fill" : "chevron.down.circle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(showReplaceMode ? .blue : .secondary)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Toggle replace mode")
+                    
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
                         .font(.system(size: 11))
@@ -1237,7 +1396,15 @@ struct ContentView: View {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
                 )
-                .animation(.spring(response: 0.20, dampingFraction: 0.5), value: searchText.isEmpty)// animation search text
+                .overlay(alignment: .bottom) {
+                    if showReplaceMode && !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        replaceBar
+                            .offset(y: 32)
+                            .transition(.opacity.combined(with: .offset(y: 20)))
+                    }
+                }
+                .animation(.spring(response: 0.20, dampingFraction: 0.5), value: searchText.isEmpty)
+                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: showReplaceMode)
             }
         }
     }
