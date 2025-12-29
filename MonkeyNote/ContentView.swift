@@ -1276,7 +1276,7 @@ struct ContentView: View {
                         onSubmit: { navigateToNextMatch() },
                         onEscape: { closeSearch() }
                     )
-                    .frame(width: 120) // width search
+                    .frame(minWidth: 100, maxWidth: 160) // flexible width search
                     #else
                     TextField("Search", text: $searchText)
                         .textFieldStyle(.plain)
