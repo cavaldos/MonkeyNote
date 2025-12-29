@@ -19,7 +19,7 @@ struct AboutSettingsView: View {
                 VStack(spacing: 4) {
                     Text("MonkeyNote")
                         .font(.system(size: 24, weight: .bold))
-                    Text("Version 1.0.0")
+                    Text("Version \(AppConfig.version) ")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
