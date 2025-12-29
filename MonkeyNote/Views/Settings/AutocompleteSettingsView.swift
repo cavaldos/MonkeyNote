@@ -11,7 +11,8 @@ struct AutocompleteSettingsView: View {
     @AppStorage("note.autocompleteEnabled") private var autocompleteEnabled: Bool = true
     @AppStorage("note.autocompleteDelay") private var autocompleteDelay: Double = 0.05
     @AppStorage("note.autocompleteOpacity") private var autocompleteOpacity: Double = 0.5
-    @AppStorage("note.useBuiltInDictionary") private var useBuiltInDictionary: Bool = true
+    @AppStorage("note.useSystemDictionary") private var useSystemDictionary: Bool = true
+    @AppStorage("note.dictionaryLanguage") private var dictionaryLanguage: String = "en"
     @AppStorage("note.minWordLength") private var minWordLength: Int = 4
     @AppStorage("note.suggestionMode") private var suggestionMode: String = "word"
 
@@ -54,6 +55,32 @@ struct AutocompleteSettingsView: View {
                 }
 
                 if suggestionMode == SuggestionMode.word.rawValue {
+                    SettingsSection("System Dictionary") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Toggle("Use System Dictionary", isOn: $useSystemDictionary)
+                                .onChange(of: useSystemDictionary) { _, newValue in
+                                    WordSuggestionManager.shared.setUseSystemDictionary(newValue)
+                                }
+                            
+                            if useSystemDictionary {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    
+                                    Picker("Language", selection: $dictionaryLanguage) {
+                                        ForEach(DictionaryService.commonLanguages, id: \.code) { lang in
+                                            Text(lang.name).tag(lang.code)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                    .frame(maxWidth: 200)
+                                    .onChange(of: dictionaryLanguage) { _, newValue in
+                                        WordSuggestionManager.shared.setDictionaryLanguage(newValue)
+                                    }
+                                }
+                                .padding(.top, 8)
+                            }
+                        }
+                    }
+                    
                     SettingsSection("Word Filter") {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Minimum Word Length: \(minWordLength) characters")
@@ -134,11 +161,6 @@ struct AutocompleteSettingsView: View {
                                 }
                                 .buttonStyle(.bordered)
                             }
-
-                            Toggle("Use built-in dictionary (\(WordSuggestionManager.shared.bundledWordCount) words)", isOn: $useBuiltInDictionary)
-                                .onChange(of: useBuiltInDictionary) { _, newValue in
-                                    WordSuggestionManager.shared.setUseBuiltIn(newValue)
-                                }
                         }
                     }
                 }

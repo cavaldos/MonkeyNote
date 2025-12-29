@@ -12,39 +12,24 @@ import AppKit
 class WordSuggestionManager {
     static let shared = WordSuggestionManager()
 
-    // HashSet for O(1) duplicate checking and existence lookup
-    private var bundledWordSet: Set<String> = []
+    // Custom words from user's folder
     private var customWordSet: Set<String> = []
-
-    // Sorted arrays for O(log n) binary search with prefix matching
-    private var bundledWordsSorted: [String] = []
     private var customWordsSorted: [String] = []
-    private var allWordsSorted: [String] = []
 
-    // Prefix cache for O(1) repeated queries (max 100 entries to prevent memory bloat)
+    // Prefix cache for O(1) repeated queries (max 100 entries)
     private var prefixCache: [String: [String]] = [:]
     private let maxCacheSize = 100
 
     private var customFolderURL: URL?
-    private var useBuiltIn: Bool = true
+    private var useSystemDictionary: Bool = true
+    private var dictionaryLanguage: String = "en"
     private var minWordLength: Int = 4
 
     private init() {
-        loadBundledWords()
         loadCustomWordsFromUserDefaults()
-        useBuiltIn = UserDefaults.standard.object(forKey: "note.useBuiltInDictionary") as? Bool ?? true
+        useSystemDictionary = UserDefaults.standard.object(forKey: "note.useSystemDictionary") as? Bool ?? true
+        dictionaryLanguage = UserDefaults.standard.string(forKey: "note.dictionaryLanguage") ?? "en"
         minWordLength = UserDefaults.standard.object(forKey: "note.minWordLength") as? Int ?? 4
-    }
-
-    private func loadBundledWords() {
-        // Load from bundled word.txt file
-        if let path = Bundle.main.path(forResource: "word", ofType: "txt"),
-           let content = try? String(contentsOfFile: path, encoding: .utf8) {
-            let words = parseWords(from: content)
-            bundledWordSet = Set(words) // O(n) - deduplicate automatically
-            bundledWordsSorted = bundledWordSet.sorted() // O(n log n) - sort once
-            rebuildCombinedWordList()
-        }
     }
 
     private func loadCustomWordsFromUserDefaults() {
@@ -63,10 +48,22 @@ class WordSuggestionManager {
         }
     }
 
-    func setUseBuiltIn(_ value: Bool) {
-        useBuiltIn = value
-        rebuildCombinedWordList()
+    func setUseSystemDictionary(_ value: Bool) {
+        useSystemDictionary = value
+        UserDefaults.standard.set(value, forKey: "note.useSystemDictionary")
         clearCache()
+    }
+
+    func setDictionaryLanguage(_ language: String) {
+        dictionaryLanguage = language
+        UserDefaults.standard.set(language, forKey: "note.dictionaryLanguage")
+        clearCache()
+        // Also clear DictionaryService cache
+        DictionaryService.shared.clearCache()
+    }
+
+    func getDictionaryLanguage() -> String {
+        return dictionaryLanguage
     }
 
     func setMinWordLength(_ value: Int) {
@@ -93,7 +90,6 @@ class WordSuggestionManager {
             customFolderURL = nil
             customWordSet = []
             customWordsSorted = []
-            rebuildCombinedWordList()
             clearCache()
         }
     }
@@ -119,10 +115,9 @@ class WordSuggestionManager {
             }
         }
 
-        // Use Set for automatic deduplication - O(n)
+        // Use Set for automatic deduplication
         customWordSet = Set(tempWords)
-        customWordsSorted = customWordSet.sorted() // O(n log n) - sort once
-        rebuildCombinedWordList()
+        customWordsSorted = customWordSet.sorted()
         clearCache()
     }
 
@@ -140,49 +135,89 @@ class WordSuggestionManager {
             .filter { !$0.isEmpty && $0.count >= 2 }
     }
 
-    // Rebuild combined sorted word list when sources change
-    private func rebuildCombinedWordList() {
-        var combinedSet: Set<String> = []
-        if useBuiltIn {
-            combinedSet.formUnion(bundledWordSet)
-        }
-        combinedSet.formUnion(customWordSet)
-        allWordsSorted = combinedSet.sorted() // O(n log n) - sort combined list once
-    }
-
     // Clear prefix cache
     private func clearCache() {
         prefixCache.removeAll()
     }
 
-    // OPTIMIZED: HashSet + Binary Search + Caching
-    // Time complexity: O(log n + k) where k = number of matches (typically < 10)
-    // Space complexity: O(n + c) where c = cache size (max 100)
+    // MARK: - Get Suggestion
+
+    /// Get autocomplete suggestion for a prefix
+    /// Combines system dictionary and custom words
     func getSuggestion(for prefix: String) -> String? {
         guard !prefix.isEmpty else { return nil }
         let lowercasedPrefix = prefix.lowercased()
 
-        // Check cache first - O(1)
+        // Check cache first
         if let cached = prefixCache[lowercasedPrefix] {
-            // Return first match that meets minWordLength and isn't exact match
-            return cached.first {
-                $0.lowercased() != lowercasedPrefix && $0.count >= minWordLength
-            }.map { word in
-                // Return only completion part (without prefix)
-                let completionStartIndex = word.index(word.startIndex, offsetBy: prefix.count)
-                return String(word[completionStartIndex...])
-            }
+            return findBestMatch(from: cached, prefix: prefix)
         }
 
-        // Binary search to find first word >= lowercasedPrefix - O(log n)
+        var allMatches: [String] = []
+
+        // 1. Get matches from system dictionary (via DictionaryService)
+        if useSystemDictionary {
+            let systemCompletions = DictionaryService.shared.completions(
+                for: prefix,
+                language: dictionaryLanguage
+            )
+            allMatches.append(contentsOf: systemCompletions)
+        }
+
+        // 2. Get matches from custom words
+        let customMatches = getCustomWordMatches(for: lowercasedPrefix)
+        allMatches.append(contentsOf: customMatches)
+
+        // Remove duplicates while preserving order
+        var seen = Set<String>()
+        allMatches = allMatches.filter { word in
+            let lowercased = word.lowercased()
+            if seen.contains(lowercased) {
+                return false
+            }
+            seen.insert(lowercased)
+            return true
+        }
+
+        // Cache the results
+        if prefixCache.count >= maxCacheSize {
+            if let firstKey = prefixCache.keys.first {
+                prefixCache.removeValue(forKey: firstKey)
+            }
+        }
+        prefixCache[lowercasedPrefix] = allMatches
+
+        return findBestMatch(from: allMatches, prefix: prefix)
+    }
+
+    /// Find the best match from a list of completions
+    private func findBestMatch(from matches: [String], prefix: String) -> String? {
+        let lowercasedPrefix = prefix.lowercased()
+
+        // Find first match that meets criteria
+        guard let match = matches.first(where: {
+            $0.lowercased() != lowercasedPrefix && $0.count >= minWordLength
+        }) else {
+            return nil
+        }
+
+        // Return only the completion suffix (part after prefix)
+        let completionStartIndex = match.index(match.startIndex, offsetBy: prefix.count)
+        return String(match[completionStartIndex...])
+    }
+
+    /// Binary search for custom words matching prefix
+    private func getCustomWordMatches(for prefix: String) -> [String] {
+        guard !customWordsSorted.isEmpty else { return [] }
+
         var matches: [String] = []
 
         // Binary search for starting position
         var left = 0
-        var right = allWordsSorted.count
+        var right = customWordsSorted.count
         while left < right {
             let mid = left + (right - left) / 2
-            if allWordsSorted[mid].lowercased() < lowercasedPrefix {
+            if customWordsSorted[mid].lowercased() < prefix {
                 left = mid + 1
             } else {
                 right = mid
@@ -190,50 +225,41 @@ class WordSuggestionManager {
         }
         let startIndex = left
 
-        // Linear scan from startIndex (very fast because sorted, typically finds match in < 10 iterations)
-        for i in startIndex..<allWordsSorted.count {
-            let word = allWordsSorted[i]
+        // Linear scan from startIndex
+        for i in startIndex..<customWordsSorted.count {
+            let word = customWordsSorted[i]
             let lowercasedWord = word.lowercased()
 
-            if lowercasedWord.hasPrefix(lowercasedPrefix) {
+            if lowercasedWord.hasPrefix(prefix) {
                 matches.append(word)
             } else {
-                break // Stop when no longer matching prefix (early termination)
+                break // Stop when no longer matching prefix
             }
         }
 
-        // Cache the results (limit cache size to prevent memory bloat)
-        if prefixCache.count >= maxCacheSize {
-            // Remove oldest entry (simple FIFO, could use LRU for better performance)
-            if let firstKey = prefixCache.keys.first {
-                prefixCache.removeValue(forKey: firstKey)
-            }
-        }
-        prefixCache[lowercasedPrefix] = matches
-
-        // Return first match that meets criteria
-        return matches.first {
-            $0.lowercased() != lowercasedPrefix && $0.count >= minWordLength
-        }.map { word in
-            // Return only completion part (without prefix)
-            let completionStartIndex = word.index(word.startIndex, offsetBy: prefix.count)
-            return String(word[completionStartIndex...])
-        }
+        return matches
     }
 
     // MARK: - Sentence Suggestion (Beta)
+
     func getSentenceSuggestion() -> String {
-        // TODO: Replace this with actual sentence suggestion logic
-        // This is a placeholder for future development
         return "this is a test version of sentence suggestion feature"
     }
+
+    // MARK: - Word Counts
 
     var customWordCount: Int {
         return customWordSet.count
     }
 
-    var bundledWordCount: Int {
-        return bundledWordSet.count
+    /// System dictionary doesn't have a fixed count, return indicator
+    var systemDictionaryStatus: String {
+        if useSystemDictionary {
+            let languageName = DictionaryService.commonLanguages.first { $0.code == dictionaryLanguage }?.name ?? dictionaryLanguage
+            return "System Dictionary (\(languageName))"
+        } else {
+            return "Disabled"
+        }
     }
 }
 #endif
