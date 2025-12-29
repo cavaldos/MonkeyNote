@@ -29,7 +29,7 @@ MonkeyNote is a minimalist, native macOS note-taking application built with Swif
 ## Screenshot
 
 <p align="center">
-  <img src="doc/image.png" alt="MonkeyNote Screenshot" width="400"/>
+  <img src="doc/screenshot/image.png" alt="MonkeyNote Screenshot" width="400"/>
 </p>
 
 ## ✨ Features
