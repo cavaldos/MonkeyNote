@@ -96,11 +96,12 @@ class SlashCommandItemView: NSControl {
         iconLabel.alignment = .center
         addSubview(iconLabel)
         
-        // Text
+        // Text - use attributed string for highlighting
         textField = NSTextField(labelWithString: "")
         textField.font = .systemFont(ofSize: 13)
         textField.textColor = .white
         textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.allowsEditingTextAttributes = true
         addSubview(textField)
         
         NSLayoutConstraint.activate([
@@ -123,9 +124,36 @@ class SlashCommandItemView: NSControl {
         backgroundLayer.frame = bounds.insetBy(dx: 5, dy: 0)
     }
     
-    func configure(with command: SlashCommand, isSelected: Bool) {
+    func configure(with command: SlashCommand, isSelected: Bool, highlightText: String = "") {
         self.command = command
-        textField.stringValue = command.rawValue
+        
+        // Create attributed string with highlight
+        let commandName = command.rawValue
+        let attributedString = NSMutableAttributedString(string: commandName)
+        
+        // Base attributes
+        let baseAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13),
+            .foregroundColor: NSColor.white
+        ]
+        attributedString.addAttributes(baseAttributes, range: NSRange(location: 0, length: commandName.count))
+        
+        // Highlight matching text (case-insensitive)
+        if !highlightText.isEmpty {
+            let lowercaseName = commandName.lowercased()
+            let lowercaseHighlight = highlightText.lowercased()
+            
+            if let range = lowercaseName.range(of: lowercaseHighlight) {
+                let nsRange = NSRange(range, in: commandName)
+                let highlightAttributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                    .foregroundColor: NSColor(red: 255/255, green: 180/255, blue: 100/255, alpha: 1.0) // Orange highlight
+                ]
+                attributedString.addAttributes(highlightAttributes, range: nsRange)
+            }
+        }
+        
+        textField.attributedStringValue = attributedString
         
         if command.useTextIcon {
             // Use text icon (H1, H2, H3)
@@ -179,24 +207,47 @@ class SlashCommandItemView: NSControl {
 
 class SlashCommandWindowController: NSObject {
     private var window: NSWindow?
+    private var backgroundView: NSView?
+    private var noResultsLabel: NSTextField?
     private var selectedIndex: Int = 0
     private var onSelect: ((SlashCommand) -> Void)?
     private var onDismiss: (() -> Void)?
     private var itemViews: [SlashCommandItemView] = []
     
+    // Filter support
+    private var filterText: String = ""
+    private var filteredCommands: [SlashCommand] = SlashCommand.allCases
+    private var menuOriginPoint: NSPoint = .zero
+    private weak var parentWindow: NSWindow?
+    
+    private let menuWidth: CGFloat = 200
+    private let rowHeight: CGFloat = 26
+    private let verticalPadding: CGFloat = 5
+    private let noResultsHeight: CGFloat = 36
+    
     func show(at point: NSPoint, in parentWindow: NSWindow?, onSelect: @escaping (SlashCommand) -> Void, onDismiss: @escaping () -> Void) {
         self.onSelect = onSelect
         self.onDismiss = onDismiss
         self.selectedIndex = 0
+        self.filterText = ""
+        self.filteredCommands = SlashCommand.allCases
+        self.menuOriginPoint = point
+        self.parentWindow = parentWindow
         
-        let menuWidth: CGFloat = 200
-        let rowHeight: CGFloat = 26
-        let verticalPadding: CGFloat = 5
-        let itemCount = SlashCommand.allCases.count
-        let menuHeight: CGFloat = CGFloat(itemCount) * rowHeight + (verticalPadding * 2)
+        createWindow()
+    }
+    
+    private func createWindow() {
+        // Remove existing window if any
+        if let existingWindow = window {
+            existingWindow.parent?.removeChildWindow(existingWindow)
+            existingWindow.orderOut(nil)
+        }
+        
+        let menuHeight = calculateMenuHeight()
         
         let panel = NSPanel(
-            contentRect: NSRect(x: point.x, y: point.y - menuHeight, width: menuWidth, height: menuHeight),
+            contentRect: NSRect(x: menuOriginPoint.x, y: menuOriginPoint.y - menuHeight, width: menuWidth, height: menuHeight),
             styleMask: [.nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -207,33 +258,106 @@ class SlashCommandWindowController: NSObject {
         panel.level = .floating
         
         // Background view with dark color
-        let backgroundView = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: menuHeight))
-        backgroundView.wantsLayer = true
-        backgroundView.layer?.cornerRadius = 6
-        backgroundView.layer?.masksToBounds = true
-        backgroundView.layer?.backgroundColor = NSColor(red: 49/255, green: 49/255, blue: 49/255, alpha: 0.98).cgColor
-        backgroundView.layer?.borderWidth = 0.5
-        backgroundView.layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
+        let bgView = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: menuHeight))
+        bgView.wantsLayer = true
+        bgView.layer?.cornerRadius = 6
+        bgView.layer?.masksToBounds = true
+        bgView.layer?.backgroundColor = NSColor(red: 49/255, green: 49/255, blue: 49/255, alpha: 0.98).cgColor
+        bgView.layer?.borderWidth = 0.5
+        bgView.layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
         
-        // Create item views
-        itemViews = []
-        let commands = SlashCommand.allCases
-        for (index, command) in commands.enumerated() {
-            let yPosition = menuHeight - verticalPadding - CGFloat(index + 1) * rowHeight
-            let itemView = SlashCommandItemView(frame: NSRect(x: 0, y: yPosition, width: menuWidth, height: rowHeight))
-            itemView.configure(with: command, isSelected: index == 0)
-            itemView.tag = index
-            itemView.target = self
-            itemView.action = #selector(itemClicked(_:))
-            backgroundView.addSubview(itemView)
-            itemViews.append(itemView)
-        }
+        backgroundView = bgView
         
-        panel.contentView = backgroundView
+        // Create item views or no results label
+        rebuildItemViews()
+        
+        panel.contentView = bgView
         self.window = panel
         
         parentWindow?.addChildWindow(panel, ordered: .above)
         panel.makeKeyAndOrderFront(nil)
+    }
+    
+    private func calculateMenuHeight() -> CGFloat {
+        if filteredCommands.isEmpty {
+            return noResultsHeight + (verticalPadding * 2)
+        }
+        return CGFloat(filteredCommands.count) * rowHeight + (verticalPadding * 2)
+    }
+    
+    private func rebuildItemViews() {
+        guard let bgView = backgroundView else { return }
+        
+        // Remove existing subviews
+        bgView.subviews.forEach { $0.removeFromSuperview() }
+        itemViews.removeAll()
+        noResultsLabel = nil
+        
+        let menuHeight = calculateMenuHeight()
+        
+        if filteredCommands.isEmpty {
+            // Show "No commands found" label - centered both horizontally and vertically
+            let label = NSTextField(labelWithString: "No commands found")
+            label.font = .systemFont(ofSize: 13)
+            label.textColor = .white.withAlphaComponent(0.5)
+            label.alignment = .center
+            label.translatesAutoresizingMaskIntoConstraints = false
+            bgView.addSubview(label)
+            
+            NSLayoutConstraint.activate([
+                label.centerXAnchor.constraint(equalTo: bgView.centerXAnchor),
+                label.centerYAnchor.constraint(equalTo: bgView.centerYAnchor)
+            ])
+            
+            noResultsLabel = label
+        } else {
+            // Create item views for filtered commands
+            for (index, command) in filteredCommands.enumerated() {
+                let yPosition = menuHeight - verticalPadding - CGFloat(index + 1) * rowHeight
+                let itemView = SlashCommandItemView(frame: NSRect(x: 0, y: yPosition, width: menuWidth, height: rowHeight))
+                itemView.configure(with: command, isSelected: index == selectedIndex, highlightText: filterText)
+                itemView.tag = index
+                itemView.target = self
+                itemView.action = #selector(itemClicked(_:))
+                bgView.addSubview(itemView)
+                itemViews.append(itemView)
+            }
+        }
+    }
+    
+    func updateFilter(_ text: String) {
+        filterText = text
+        
+        // Filter commands based on text (case-insensitive)
+        if text.isEmpty {
+            filteredCommands = SlashCommand.allCases
+        } else {
+            filteredCommands = SlashCommand.allCases.filter { command in
+                command.rawValue.lowercased().contains(text.lowercased())
+            }
+        }
+        
+        // Reset selection to first item
+        selectedIndex = 0
+        
+        // Rebuild the menu with new filtered results
+        updateWindowSize()
+        rebuildItemViews()
+    }
+    
+    private func updateWindowSize() {
+        guard let window = window, let bgView = backgroundView else { return }
+        
+        let menuHeight = calculateMenuHeight()
+        
+        // Update window frame
+        var frame = window.frame
+        frame.size.height = menuHeight
+        frame.origin.y = menuOriginPoint.y - menuHeight
+        window.setFrame(frame, display: true, animate: false)
+        
+        // Update background view frame
+        bgView.frame = NSRect(x: 0, y: 0, width: menuWidth, height: menuHeight)
     }
     
     private func updateSelection() {
@@ -253,28 +377,42 @@ class SlashCommandWindowController: NSObject {
             window.orderOut(nil)
         }
         self.window = nil
+        self.backgroundView = nil
         self.itemViews = []
+        self.filterText = ""
+        self.filteredCommands = SlashCommand.allCases
         onDismiss?()
     }
     
     func moveUp() {
+        guard !filteredCommands.isEmpty else { return }
         selectedIndex = max(0, selectedIndex - 1)
         updateSelection()
     }
     
     func moveDown() {
-        selectedIndex = min(SlashCommand.allCases.count - 1, selectedIndex + 1)
+        guard !filteredCommands.isEmpty else { return }
+        selectedIndex = min(filteredCommands.count - 1, selectedIndex + 1)
         updateSelection()
     }
     
     func selectCurrent() {
-        let command = SlashCommand.allCases[selectedIndex]
+        guard !filteredCommands.isEmpty, selectedIndex < filteredCommands.count else { return }
+        let command = filteredCommands[selectedIndex]
         onSelect?(command)
         dismiss()
     }
     
     var isVisible: Bool {
         window != nil
+    }
+    
+    var currentFilterText: String {
+        filterText
+    }
+    
+    var hasResults: Bool {
+        !filteredCommands.isEmpty
     }
 }
 #endif

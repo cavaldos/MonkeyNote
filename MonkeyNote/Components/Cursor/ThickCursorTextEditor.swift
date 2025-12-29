@@ -64,6 +64,7 @@ private class ThickCursorTextView: NSTextView {
     // Slash command menu
     private var slashCommandController = SlashCommandWindowController()
     private var slashCommandRange: NSRange?
+    private var slashFilterText: String = ""  // Track text typed after "/"
     
     // Autocomplete ghost text
     private var ghostTextLayer: CATextLayer?
@@ -660,12 +661,13 @@ private class ThickCursorTextView: NSTextView {
     private func dismissSlashMenu() {
         slashCommandController.dismiss()
         slashCommandRange = nil
+        slashFilterText = ""
     }
     
     private func handleSlashCommand(_ command: SlashCommand) {
         guard let range = slashCommandRange else { return }
         
-        // Simply replace the "/" character with the command prefix
+        // Replace "/" and any filter text with the command prefix
         replaceCharacters(in: range, with: command.prefix)
         
         // Set cursor position right after the inserted prefix
@@ -673,6 +675,7 @@ private class ThickCursorTextView: NSTextView {
         setSelectedRange(NSRange(location: newCursorPosition, length: 0))
         
         slashCommandRange = nil
+        slashFilterText = ""
     }
 
     override func keyDown(with event: NSEvent) {
@@ -686,16 +689,33 @@ private class ThickCursorTextView: NSTextView {
                 slashCommandController.moveDown()
                 return
             case 36: // Enter
-                slashCommandController.selectCurrent()
+                if slashCommandController.hasResults {
+                    slashCommandController.selectCurrent()
+                } else {
+                    // No results, just dismiss and insert newline
+                    dismissSlashMenu()
+                    super.keyDown(with: event)
+                }
                 return
             case 53: // Escape
                 dismissSlashMenu()
                 return
-            default: 
-                // Any other key dismisses menu and stops processing
-                dismissSlashMenu() // fix return when menu is open
-                // Don't process the key that dismissed the menu
+            case 51: // Delete/Backspace
+                // Handle backspace - update filter or dismiss
+                if slashFilterText.isEmpty {
+                    // If filter is empty, backspace deletes the "/" and dismisses menu
+                    dismissSlashMenu()
+                    super.deleteBackward(nil)
+                } else {
+                    // Remove last character from filter
+                    slashFilterText.removeLast()
+                    slashCommandController.updateFilter(slashFilterText)
+                    super.deleteBackward(nil)
+                }
                 return
+            default:
+                // Let other keys (letters, etc.) pass through to insertText
+                break
             }
         }
         
@@ -928,6 +948,30 @@ private class ThickCursorTextView: NSTextView {
             return
         }
         
+        // If slash command menu is visible, update filter with typed character
+        if slashCommandController.isVisible {
+            // Only allow alphanumeric characters for filtering
+            if str.rangeOfCharacter(from: CharacterSet.alphanumerics) != nil {
+                slashFilterText += str
+                slashCommandController.updateFilter(slashFilterText)
+                super.insertText(insertString, replacementRange: replacementRange)
+                
+                // Update the slash command range to include filter text
+                if let range = slashCommandRange {
+                    slashCommandRange = NSRange(location: range.location, length: 1 + slashFilterText.utf16.count)
+                }
+                return
+            } else if str == " " || str == "\n" || str == "\t" {
+                // Space, newline, or tab dismisses the menu
+                dismissSlashMenu()
+                super.insertText(insertString, replacementRange: replacementRange)
+                return
+            } else {
+                // Other special characters dismiss the menu
+                dismissSlashMenu()
+            }
+        }
+        
         // Check for space after "." or "-" at line start to convert to bullet
         if str == " " {
             let selectedRange = self.selectedRange()
@@ -992,6 +1036,7 @@ private class ThickCursorTextView: NSTextView {
         }
         
         if isAtLineStart {
+            slashFilterText = ""  // Reset filter text when opening menu
             showSlashMenu()
         }
     }
