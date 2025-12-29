@@ -142,13 +142,6 @@ struct ContentView: View {
     @State private var currentSearchIndex: Int = 0
     @State private var isSearchComplete: Bool = true  // For showing "X+" vs "X"
     
-    // Pomodoro timer state
-    @State private var showPomodoroInput: Bool = false
-    @State private var pomodoroMinutesInput: String = ""
-    @State private var pomodoroTimeRemaining: Int = 0 // seconds
-    @State private var pomodoroIsRunning: Bool = false
-    @State private var pomodoroTimer: Timer?
-
     @State private var renameRequest: RenameRequest?
     
     // Trash
@@ -616,93 +609,6 @@ struct ContentView: View {
         triggerHaptic() // Haptic feedback
     }
     
-    // MARK: - Pomodoro Timer Functions
-    
-    private func startPomodoroInput() {
-        showPomodoroInput = true
-    }
-    
-    private func startPomodoro() {
-        // If input is empty, use default 25 minutes
-        let minutes = Int(pomodoroMinutesInput.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 25
-        guard minutes > 0 else { return }
-        
-        pomodoroTimeRemaining = minutes * 60
-        pomodoroIsRunning = true
-        showPomodoroInput = false
-        
-        // Start timer
-        pomodoroTimer?.invalidate()
-        pomodoroTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            if pomodoroTimeRemaining > 0 {
-                pomodoroTimeRemaining -= 1
-            } else {
-                stopPomodoro()
-                // Play sound or show notification when timer completes
-                #if os(macOS)
-                NSSound.beep()
-                #endif
-            }
-        }
-        
-        #if os(macOS)
-        triggerHaptic(.generic)
-        #else
-        triggerHaptic(.light)
-        #endif
-    }
-    
-    private func pausePomodoro() {
-        pomodoroIsRunning = false
-        pomodoroTimer?.invalidate()
-        
-        #if os(macOS)
-        triggerHaptic(.generic)
-        #else
-        triggerHaptic(.light)
-        #endif
-    }
-    
-    private func resumePomodoro() {
-        pomodoroIsRunning = true
-        
-        pomodoroTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            if pomodoroTimeRemaining > 0 {
-                pomodoroTimeRemaining -= 1
-            } else {
-                stopPomodoro()
-                #if os(macOS)
-                NSSound.beep()
-                #endif
-            }
-        }
-        
-        #if os(macOS)
-        triggerHaptic(.generic)
-        #else
-        triggerHaptic(.light)
-        #endif
-    }
-    
-    private func stopPomodoro() {
-        pomodoroIsRunning = false
-        pomodoroTimer?.invalidate()
-        pomodoroTimeRemaining = 0
-        pomodoroMinutesInput = ""
-        
-        #if os(macOS)
-        triggerHaptic(.generic)
-        #else
-        triggerHaptic(.light)
-        #endif
-    }
-    
-    private func formatPomodoroTime(_ seconds: Int) -> String {
-        let minutes = seconds / 60
-        let secs = seconds % 60
-        return String(format: "%02d:%02d", minutes, secs)
-    }
-    
     private func closeSearch() {
         searchText = ""
         replaceText = ""
@@ -783,139 +689,6 @@ struct ContentView: View {
         return matches
     }
     
-    // MARK: - Pomodoro Timer View
-    
-    private var pomodoroTimerView: some View {
-        HStack(spacing: 6) {
-            // Timer display or input
-            if pomodoroTimeRemaining > 0 {
-                // Show countdown
-                HStack(spacing: 4) {
-                    Image(systemName: "timer")
-                        .font(.system(size: 12))
-                        .foregroundStyle(pomodoroIsRunning ? .orange : .secondary)
-                    
-                    Text(formatPomodoroTime(pomodoroTimeRemaining))
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(isDarkMode ? .white.opacity(0.9) : .black.opacity(0.9))
-                }
-                
-                // Pause/Resume button
-                Button {
-                    if pomodoroIsRunning {
-                        pausePomodoro()
-                    } else {
-                        resumePomodoro()
-                    }
-                } label: {
-                    Image(systemName: pomodoroIsRunning ? "pause.fill" : "play.fill")
-                        .font(.system(size: 8, weight: .semibold))
-                        .frame(width: 18, height: 18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(isDarkMode ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
-                        )
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                
-                // Stop button
-                Button {
-                    stopPomodoro()
-                } label: {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 8, weight: .semibold))
-                        .frame(width: 18, height: 18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(isDarkMode ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
-                        )
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            } else if showPomodoroInput {
-                // Show input field
-                Image(systemName: "timer")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                
-                #if os(macOS)
-                TextField("25", text: $pomodoroMinutesInput)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
-                    .frame(width: 50)
-                    .onSubmit {
-                        startPomodoro()
-                    }
-                    .onExitCommand {
-                        // Handle Esc key
-                        showPomodoroInput = false
-                        pomodoroMinutesInput = ""
-                    }
-                #else
-                TextField("25", text: $pomodoroMinutesInput)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
-                    .keyboardType(.numberPad)
-                #endif
-                
-                // Start button
-                Button {
-                    startPomodoro()
-                } label: {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 8, weight: .semibold))
-                        .frame(width: 18, height: 18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(isDarkMode ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
-                        )
-                        .foregroundStyle(isDarkMode ? .white : .black)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                
-                // Cancel button
-                Button {
-                    showPomodoroInput = false
-                    pomodoroMinutesInput = ""
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .semibold))
-                        .frame(width: 18, height: 18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(isDarkMode ? Color.white.opacity(0.1) : Color.black.opacity(0.08))
-                        )
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            } else {
-                // Show timer icon button
-                Button {
-                    startPomodoroInput()
-                } label: {
-                    Image(systemName: "timer")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Start Pomodoro timer")
-            }
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
-        )
-        .animation(.spring(response: 0.20, dampingFraction: 0.5), value: pomodoroTimeRemaining)
-        .animation(.spring(response: 0.20, dampingFraction: 0.5), value: showPomodoroInput)
-        .animation(.spring(response: 0.20, dampingFraction: 0.5), value: pomodoroIsRunning)
-    }
-
     private var replaceBar: some View {
         HStack(spacing: 6) {
             // Spacer để align với search field
@@ -1449,8 +1222,8 @@ struct ContentView: View {
                 Spacer()
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                // Pomodoro timer
-                pomodoroTimerView
+                // Pomodoro timer (isolated component - won't trigger ContentView re-render)
+                PomodoroTimerView()
                 
                 // Markdown render toggle button
                 ThemeIconButton(
