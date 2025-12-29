@@ -17,6 +17,8 @@ enum SlashCommand: String, CaseIterable {
     case bulletedList = "Bulleted List"
     case numberedList = "Numbered List"
     case quote = "Quote"
+    case callout = "Callout"
+    case divider = "Divider"
     
     var icon: String {
         switch self {
@@ -26,6 +28,8 @@ enum SlashCommand: String, CaseIterable {
         case .bulletedList: return "list.bullet"
         case .numberedList: return "list.number"
         case .quote: return "text.quote"
+        case .callout: return "bubble.left.fill"
+        case .divider: return "minus"
         }
     }
     
@@ -36,7 +40,9 @@ enum SlashCommand: String, CaseIterable {
         case .heading3: return "### "
         case .bulletedList: return "• "
         case .numberedList: return "1. "
-        case .quote: return ">  "
+        case .quote: return "> "
+        case .callout: return "> [!note]   "
+        case .divider: return "---"
         }
     }
     

@@ -25,6 +25,7 @@ enum MarkdownStyle {
     case bulletList     // • bullet
     case blockquote     // > quote
     case horizontalRule // ---
+    case callout        // > [!note] callout content
 }
 
 // MARK: - Markdown Match
@@ -62,6 +63,7 @@ class MarkdownParser {
             ("^(•)", .bulletList, 0, 0),
             
             // Blockquote - match > at start of line with content
+            // Note: callout lines (> [!type]) are handled separately in parse()
             ("^> (.+)$", .blockquote, 2, 0),
             
             // Horizontal rule - match --- at start of line (at least 3 dashes, nothing else)
@@ -100,7 +102,7 @@ class MarkdownParser {
             do {
                 let options: NSRegularExpression.Options
                 switch definition.style {
-                case .heading1, .heading2, .heading3, .numberedList, .bulletList, .blockquote, .horizontalRule:
+                case .heading1, .heading2, .heading3, .numberedList, .bulletList, .blockquote, .horizontalRule, .callout:
                     options = [.anchorsMatchLines]
                 default:
                     options = []
@@ -119,11 +121,26 @@ class MarkdownParser {
         let nsText = text as NSString
         let fullRange = NSRange(location: 0, length: nsText.length)
         
+        // First, detect callout blocks (multi-line)
+        let calloutMatches = parseCalloutBlocks(in: text, nsText: nsText)
+        matches.append(contentsOf: calloutMatches)
+        
+        // Get ranges covered by callouts to exclude from blockquote matching
+        let calloutRanges = Set(calloutMatches.map { $0.range })
+        
         for (regex, style, syntaxLengths) in patterns {
             let regexMatches = regex.matches(in: text, options: [], range: fullRange)
             
             for match in regexMatches {
                 guard match.range.location != NSNotFound else { continue }
+                
+                // Skip blockquote matches that overlap with callout ranges
+                if style == .blockquote {
+                    let overlapsWithCallout = calloutRanges.contains { calloutRange in
+                        NSIntersectionRange(match.range, calloutRange).length > 0
+                    }
+                    if overlapsWithCallout { continue }
+                }
                 
                 let markdownMatch: MarkdownMatch
                 
@@ -151,6 +168,80 @@ class MarkdownParser {
         let nonOverlappingMatches = removeOverlaps(matches: matches)
         
         return nonOverlappingMatches
+    }
+    
+    // MARK: - Parse Callout Blocks
+    private func parseCalloutBlocks(in text: String, nsText: NSString) -> [MarkdownMatch] {
+        var matches: [MarkdownMatch] = []
+        
+        // Pattern for callout header: > [!type] optional content
+        // Matches: > [!note], > [!warning] some text, etc.
+        guard let headerRegex = try? NSRegularExpression(
+            pattern: "^> \\[!\\w+\\].*$",
+            options: [.anchorsMatchLines]
+        ) else { return [] }
+        
+        let lines = text.components(separatedBy: "\n")
+        var currentIndex = 0
+        var inCallout = false
+        var calloutStartIndex = 0
+        
+        for (lineIndex, line) in lines.enumerated() {
+            let lineStart = currentIndex
+            let lineLength = line.utf16.count
+            let lineRange = NSRange(location: lineStart, length: lineLength)
+            
+            let isCalloutHeader = headerRegex.firstMatch(in: line, options: [], range: NSRange(location: 0, length: line.utf16.count)) != nil
+            let isCalloutContinuation = line.hasPrefix(">") && inCallout
+            
+            if isCalloutHeader {
+                // Start new callout block
+                inCallout = true
+                calloutStartIndex = lineStart
+                
+                // Find the "> [!type]" prefix to mark as syntax
+                let syntaxEndIndex = line.firstIndex(of: "]").map { line.distance(from: line.startIndex, to: $0) + 1 } ?? 0
+                let syntaxRange = NSRange(location: lineStart, length: syntaxEndIndex + 2) // +2 for "> "
+                
+                let contentStart = lineStart + syntaxEndIndex + 2
+                let contentLength = max(0, lineLength - syntaxEndIndex - 2)
+                
+                let match = MarkdownMatch(
+                    range: lineRange,
+                    contentRange: NSRange(location: contentStart, length: contentLength),
+                    style: .callout,
+                    syntaxRanges: [syntaxRange],
+                    url: nil
+                )
+                matches.append(match)
+                
+            } else if isCalloutContinuation {
+                // Continuation line in callout: starts with > 
+                let syntaxLength = line.hasPrefix("> ") ? 2 : 1
+                let syntaxRange = NSRange(location: lineStart, length: syntaxLength)
+                
+                let contentStart = lineStart + syntaxLength
+                let contentLength = max(0, lineLength - syntaxLength)
+                
+                let match = MarkdownMatch(
+                    range: lineRange,
+                    contentRange: NSRange(location: contentStart, length: contentLength),
+                    style: .callout,
+                    syntaxRanges: [syntaxRange],
+                    url: nil
+                )
+                matches.append(match)
+                
+            } else {
+                // End callout block
+                inCallout = false
+            }
+            
+            // Move to next line (+1 for newline character, except for last line)
+            currentIndex += lineLength + (lineIndex < lines.count - 1 ? 1 : 0)
+        }
+        
+        return matches
     }
     
     // MARK: - Remove Overlaps (Optimized with Local Search)
@@ -402,6 +493,21 @@ extension MarkdownParser {
             paragraphStyle.paragraphSpacingBefore = 12  // space above
             paragraphStyle.paragraphSpacing = 12        // space below
             attributes[.paragraphStyle] = paragraphStyle
+            
+        case .callout:
+            // Gray text for callout content
+            attributes[.foregroundColor] = NSColor.gray
+            // Custom key for callout background rendering (handled by LayoutManager)
+            let calloutKey = NSAttributedString.Key("callout")
+            attributes[calloutKey] = true
+            
+            // //Add padding: left indent from bar, and vertical spacing
+            // let paragraphStyle = NSMutableParagraphStyle()
+            // paragraphStyle.firstLineHeadIndent = 20  // Indent from left bar
+            // paragraphStyle.headIndent = 20           // Indent for wrapped lines
+            // paragraphStyle.paragraphSpacingBefore = 12  // Space above
+            // paragraphStyle.paragraphSpacing = 20        // Space below (larger to separate from next line)
+            // attributes[.paragraphStyle] = paragraphStyle
         }
         
         return attributes
