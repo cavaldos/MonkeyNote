@@ -8,6 +8,7 @@
 #if os(macOS)
 import Foundation
 import AppKit
+import CoreServices.DictionaryServices
 
 /// Service for interacting with macOS system dictionary via NSSpellChecker
 class DictionaryService {
@@ -17,6 +18,7 @@ class DictionaryService {
     
     // Cache for completions to avoid repeated lookups
     private var completionCache: [String: [String]] = [:]
+    private var definitionCache: [String: String] = [:]
     private let maxCacheSize = 100
     
     private init() {}
@@ -44,6 +46,87 @@ class DictionaryService {
         ("zh-Hans", "Chinese (Simplified)"),
         ("zh-Hant", "Chinese (Traditional)")
     ]
+    
+    // MARK: - Dictionary Lookup
+    
+    /// Get the definition of a word from the system dictionary
+    /// - Parameter word: The word to look up
+    /// - Returns: The definition text, or nil if not found
+    func getDefinition(for word: String) -> String? {
+        let trimmedWord = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedWord.isEmpty else { return nil }
+        
+        let cacheKey = trimmedWord.lowercased()
+        
+        // Check cache first
+        if let cached = definitionCache[cacheKey] {
+            return cached
+        }
+        
+        // Use DCSCopyTextDefinition (public API)
+        let nsString = trimmedWord as NSString
+        let range = CFRange(location: 0, length: nsString.length)
+        
+        guard let definition = DCSCopyTextDefinition(nil, nsString, range) else {
+            return nil
+        }
+        
+        let result = definition.takeRetainedValue() as String
+        
+        // Cache the result
+        if definitionCache.count >= maxCacheSize {
+            if let firstKey = definitionCache.keys.first {
+                definitionCache.removeValue(forKey: firstKey)
+            }
+        }
+        definitionCache[cacheKey] = result
+        
+        return result
+    }
+    
+    /// Check if a word has a definition in the dictionary
+    /// - Parameter word: The word to check
+    /// - Returns: true if the word has a definition
+    func hasDefinition(for word: String) -> Bool {
+        return getDefinition(for: word) != nil
+    }
+    
+    /// Format definition for display (clean up and structure)
+    /// - Parameter definition: Raw definition from DCSCopyTextDefinition
+    /// - Returns: Formatted definition string
+    func formatDefinition(_ definition: String) -> String {
+        // The raw definition from DCS often has the word and pronunciation at the start
+        // Format: "word | pronunciation | part_of_speech definition..."
+        
+        var formatted = definition
+        
+        // Clean up multiple spaces
+        formatted = formatted.replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
+        
+        // Add line breaks before numbered definitions (1, 2, 3, etc.)
+        formatted = formatted.replacingOccurrences(
+            of: "([^0-9])([0-9]+)\\s+",
+            with: "$1\n\n$2 ",
+            options: .regularExpression
+        )
+        
+        // Add line break before parts of speech indicators
+        let partsOfSpeech = ["noun", "verb", "adjective", "adverb", "pronoun", "preposition", "conjunction", "interjection", "determiner"]
+        for pos in partsOfSpeech {
+            formatted = formatted.replacingOccurrences(
+                of: " \(pos) ",
+                with: "\n\n\(pos.capitalized)\n",
+                options: .caseInsensitive
+            )
+        }
+        
+        // Add line break before "PHRASES" or "DERIVATIVES" sections
+        formatted = formatted.replacingOccurrences(of: "PHRASES", with: "\n\nPHRASES")
+        formatted = formatted.replacingOccurrences(of: "DERIVATIVES", with: "\n\nDERIVATIVES")
+        formatted = formatted.replacingOccurrences(of: "ORIGIN", with: "\n\nORIGIN")
+        
+        return formatted.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     
     // MARK: - Word Completions
     
@@ -142,9 +225,10 @@ class DictionaryService {
     
     // MARK: - Cache Management
     
-    /// Clear the completion cache
+    /// Clear all caches
     func clearCache() {
         completionCache.removeAll()
+        definitionCache.removeAll()
     }
 }
 #endif

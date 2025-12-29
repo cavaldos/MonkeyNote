@@ -72,6 +72,11 @@ private class ThickCursorTextView: NSTextView {
     private var slashCommandRange: NSRange?
     private var slashFilterText: String = ""  // Track text typed after "/"
     
+    // Dictionary lookup (triggered by "word\")
+    private var dictionaryLookupController: DictionaryLookupWindowController?
+    private var dictionaryLookupRange: NSRange?  // Range of "word\" including the backslash
+    var dictionaryLanguage: String = "en"
+    
     // Autocomplete ghost text
     private var ghostTextLayer: CATextLayer?
     private var currentSuggestion: String?
@@ -683,6 +688,74 @@ private class ThickCursorTextView: NSTextView {
         slashCommandRange = nil
         slashFilterText = ""
     }
+    
+    // MARK: - Dictionary Lookup (triggered by "word\")
+    
+    /// Called when "\" is typed - find the word before it and show lookup menu
+    private func showDictionaryLookupForWordBeforeBackslash() {
+        guard let window = self.window else { return }
+        
+        let selectedRange = self.selectedRange()
+        let text = self.string as NSString
+        
+        // Backslash was just inserted at cursor position - 1
+        let backslashPosition = selectedRange.location - 1
+        guard backslashPosition >= 0 else { return }
+        
+        // Find the word before the backslash
+        var wordStart = backslashPosition
+        while wordStart > 0 {
+            let charIndex = wordStart - 1
+            let char = text.substring(with: NSRange(location: charIndex, length: 1))
+            if char.rangeOfCharacter(from: CharacterSet.alphanumerics) == nil {
+                break
+            }
+            wordStart -= 1
+        }
+        
+        // Must have at least 1 character before backslash
+        guard wordStart < backslashPosition else {
+            // No word before backslash, just let it be typed normally
+            return
+        }
+        
+        let wordToLookup = text.substring(with: NSRange(location: wordStart, length: backslashPosition - wordStart))
+        
+        // Store the range of "word\" (including backslash)
+        dictionaryLookupRange = NSRange(location: wordStart, length: backslashPosition - wordStart + 1)
+        
+        // Get cursor position in screen coordinates for menu positioning
+        guard let layoutManager = layoutManager,
+              let textContainer = textContainer else { return }
+        
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: NSRange(location: backslashPosition, length: 1), actualCharacterRange: nil)
+        var cursorRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        cursorRect.origin.x += textContainerInset.width
+        cursorRect.origin.y += textContainerInset.height
+        
+        let rectInView = convert(cursorRect, to: nil)
+        let rectInWindow = window.convertToScreen(NSRect(origin: rectInView.origin, size: CGSize(width: 1, height: cursorRect.height)))
+        
+        // Create controller if needed
+        if dictionaryLookupController == nil {
+            dictionaryLookupController = DictionaryLookupWindowController()
+        }
+        
+        // Show the menu
+        dictionaryLookupController?.show(
+            at: NSPoint(x: rectInWindow.origin.x, y: rectInWindow.origin.y),
+            in: window,
+            word: wordToLookup,
+            onDismiss: { [weak self] in
+                self?.dictionaryLookupRange = nil
+            }
+        )
+    }
+    
+    private func dismissDictionaryLookup() {
+        dictionaryLookupController?.dismiss()
+        dictionaryLookupRange = nil
+    }
 
     override func keyDown(with event: NSEvent) {
         // Handle slash command menu navigation
@@ -723,6 +796,17 @@ private class ThickCursorTextView: NSTextView {
                 // Let other keys (letters, etc.) pass through to insertText
                 break
             }
+        }
+        
+        // Handle dictionary lookup - dismiss on any key except viewing
+        if let dictController = dictionaryLookupController, dictController.isVisible {
+            // Escape dismisses the lookup
+            if event.keyCode == 53 {
+                dismissDictionaryLookup()
+                return
+            }
+            // Any other key dismisses and continues normal behavior
+            dismissDictionaryLookup()
         }
         
         // Handle Escape to dismiss autocomplete suggestion
@@ -1056,6 +1140,12 @@ private class ThickCursorTextView: NSTextView {
             hideSuggestion()
         } else {
             updateSuggestion()
+        }
+        
+        // Check if "\" was typed - show dictionary lookup for word before it
+        if str == "\\" {
+            showDictionaryLookupForWordBeforeBackslash()
+            return
         }
         
         // Check if "/" was typed at the beginning of a line
