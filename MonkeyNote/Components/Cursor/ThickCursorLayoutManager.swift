@@ -15,6 +15,8 @@ class ThickCursorLayoutManager: NSLayoutManager {
     static let roundedBackgroundColorKey = NSAttributedString.Key("roundedBackgroundColor")
     // Custom attribute key for blockquote bar
     static let blockquoteBarKey = NSAttributedString.Key("blockquoteBar")
+    // Custom attribute key for horizontal rule
+    static let horizontalRuleKey = NSAttributedString.Key("horizontalRule")
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
@@ -67,6 +69,35 @@ class ThickCursorLayoutManager: NSLayoutManager {
                 let barColor = NSColor.gray
                 let path = NSBezierPath(roundedRect: barRect, xRadius: 1.5, yRadius: 1.5)
                 barColor.setFill()
+                path.fill()
+            }
+        }
+        
+        // Draw horizontal rule (divider)
+        textStorage.enumerateAttribute(Self.horizontalRuleKey, in: characterRange, options: []) { value, range, _ in
+            guard value != nil else { return }
+            
+            let glyphRange = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            guard let textContainer = textContainers.first else { return }
+            
+            // Get bounding rect for this line
+            self.enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: textContainer) { rect, _ in
+                // Calculate horizontal line position (centered vertically in the line)
+                let lineHeight: CGFloat = 1.5
+                let lineY = rect.origin.y + origin.y + (rect.height / 2) - (lineHeight / 2)
+                
+                // Full width of text container
+                let lineRect = NSRect(
+                    x: origin.x,
+                    y: lineY,
+                    width: textContainer.size.width,
+                    height: lineHeight
+                )
+                
+                // Draw horizontal line with 30% opacity gray
+                let lineColor = NSColor.gray.withAlphaComponent(0.3)
+                let path = NSBezierPath(roundedRect: lineRect, xRadius: 0.75, yRadius: 0.75)
+                lineColor.setFill()
                 path.fill()
             }
         }

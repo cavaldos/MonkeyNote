@@ -24,6 +24,7 @@ enum MarkdownStyle {
     case numberedList   // 1. 2. 3. etc.
     case bulletList     // • bullet
     case blockquote     // > quote
+    case horizontalRule // ---
 }
 
 // MARK: - Markdown Match
@@ -63,6 +64,9 @@ class MarkdownParser {
             // Blockquote - match > at start of line with content
             ("^> (.+)$", .blockquote, 2, 0),
             
+            // Horizontal rule - match --- at start of line (at least 3 dashes, nothing else)
+            ("^---+$", .horizontalRule, 0, 0),
+            
             // Bold + Italic (must come before bold and italic)
             ("\\*\\*\\*([^*]+)\\*\\*\\*", .boldItalic, 3, 3),
             ("___([^_]+)___", .boldItalic, 3, 3),
@@ -96,7 +100,7 @@ class MarkdownParser {
             do {
                 let options: NSRegularExpression.Options
                 switch definition.style {
-                case .heading1, .heading2, .heading3, .numberedList, .bulletList, .blockquote:
+                case .heading1, .heading2, .heading3, .numberedList, .bulletList, .blockquote, .horizontalRule:
                     options = [.anchorsMatchLines]
                 default:
                     options = []
@@ -132,6 +136,9 @@ class MarkdownParser {
                     
                 case .numberedList, .bulletList:
                     markdownMatch = parseListMarker(match: match, style: style, in: nsText)
+                    
+                case .horizontalRule:
+                    markdownMatch = parseHorizontalRule(match: match, in: nsText)
                     
                 default:
                     markdownMatch = parseInlineStyle(match: match, style: style, syntaxLengths: syntaxLengths, in: nsText)
@@ -283,6 +290,20 @@ class MarkdownParser {
             url: nil
         )
     }
+    
+    private func parseHorizontalRule(match: NSTextCheckingResult, in text: NSString) -> MarkdownMatch {
+        let fullRange = match.range
+        
+        // The entire "---" is syntax that should be hidden when cursor is not on line
+        // contentRange is empty or same as fullRange for rendering purposes
+        return MarkdownMatch(
+            range: fullRange,
+            contentRange: fullRange,
+            style: .horizontalRule,
+            syntaxRanges: [fullRange],  // Hide the "---" text
+            url: nil
+        )
+    }
 }
 
 // MARK: - Style Attributes
@@ -368,6 +389,19 @@ extension MarkdownParser {
             // Custom key for vertical bar rendering (handled by LayoutManager)
             let blockquoteBarKey = NSAttributedString.Key("blockquoteBar")
             attributes[blockquoteBarKey] = true
+            
+        case .horizontalRule:
+            // Hide the "---" text and add custom key for horizontal line rendering
+            let horizontalRuleKey = NSAttributedString.Key("horizontalRule")
+            attributes[horizontalRuleKey] = true
+            // Make text transparent (will be hidden, line drawn by LayoutManager)
+            attributes[.foregroundColor] = NSColor.clear
+            
+            // Add padding above and below the divider
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.paragraphSpacingBefore = 12  // space above
+            paragraphStyle.paragraphSpacing = 12        // space below
+            attributes[.paragraphStyle] = paragraphStyle
         }
         
         return attributes

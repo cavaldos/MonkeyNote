@@ -1364,6 +1364,14 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: horizontalPadding, height: 0)
         
+        // Disable automatic text substitution features
+        textView.isAutomaticQuoteSubstitutionEnabled = false // disable “smart quotes”
+        textView.isAutomaticDashSubstitutionEnabled = false // disable — em dash substitution
+        textView.isAutomaticTextReplacementEnabled = false // disable text replacement (e.g., (c) → ©)
+        textView.isAutomaticSpellingCorrectionEnabled = true // disable spelling correction
+        textView.smartInsertDeleteEnabled = true // disable smart insert/delete
+
+        
         // Critical settings for proper scrolling
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
