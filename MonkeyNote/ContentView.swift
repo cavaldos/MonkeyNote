@@ -33,12 +33,6 @@ func triggerHaptic(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .generic
 }
 #endif
 
-// MARK: - Save Status Enum
-enum SaveStatus: Equatable {
-    case idle
-    case saving
-}
-
 // MARK: - Notifications
 extension Notification.Name {
     static let focusSearch = Notification.Name("focusSearch")
@@ -161,11 +155,6 @@ struct ContentView: View {
     @State private var trashItems: [TrashItem] = []
     @State private var showTrash: Bool = false
     
-    // Save delay status
-    @State private var saveStatus: SaveStatus = .idle
-    @State private var saveTask: Task<Void, Never>?
-    private let saveDelay: TimeInterval = 2.0 // delay save in seconds
-    
     // Flag to prevent double save when changing vault
     @State private var isChangingVault: Bool = false
     
@@ -261,7 +250,6 @@ struct ContentView: View {
     /// Open external file for editing
     private func openExternalFile(url: URL) {
         // Save current note first
-        saveTask?.cancel()
         if selectedNoteID != nil {
             saveAllToDisk()
         }
@@ -363,19 +351,8 @@ struct ContentView: View {
                 set: { newValue in
                     externalFileText = newValue
                     
-                    // Auto-save external file with delay
-                    saveTask?.cancel()
-                    saveStatus = .saving
-                    
-                    saveTask = Task {
-                        try? await Task.sleep(nanoseconds: UInt64(saveDelay * 1_000_000_000))
-                        guard !Task.isCancelled else { return }
-                        
-                        await MainActor.run {
-                            saveExternalFile()
-                            saveStatus = .idle
-                        }
-                    }
+                    // Auto-save external file immediately
+                    saveExternalFile()
                 }
             )
         } else {
@@ -410,19 +387,8 @@ struct ContentView: View {
                     }
                 }
 
-                // Cancel any existing save task and start new save with delay
-                saveTask?.cancel()
-                saveStatus = .saving
-
-                saveTask = Task {
-                    try? await Task.sleep(nanoseconds: UInt64(saveDelay * 1_000_000_000))
-                    guard !Task.isCancelled else { return }
-
-                    await MainActor.run {
-                        saveAllToDisk()
-                        saveStatus = .idle
-                    }
-                }
+                // Save immediately
+                saveAllToDisk()
             }
         )
     }
@@ -486,7 +452,6 @@ struct ContentView: View {
                     // Save current vault before switching
                     print("💾 Saving current vault before change...")
                     isChangingVault = true
-                    saveTask?.cancel()
                     saveAllToDisk()
                 }
             )
@@ -512,14 +477,13 @@ struct ContentView: View {
             print("📂 Switched to vault: \(newURL?.path ?? "none")")
         }
         .onDisappear {
-            // Cancel pending save task and save immediately when view disappears
+            // Save immediately when view disappears
             // Skip save if we're just changing vault (already saved)
             guard !isChangingVault else {
                 print("⏭️ Skipping save - vault is changing")
                 return
             }
             
-            saveTask?.cancel()
             saveAllToDisk()
         }
     }
@@ -552,16 +516,9 @@ struct ContentView: View {
             }
             
             Text(selectedNoteTitle)
-            if saveStatus == .saving {
-                ProgressView()
-                    .scaleEffect(0.5)
-                    .controlSize(.small)
-                    .tint(.gray)
-            } else {
-                Circle()
-                    .fill(Color.red)
-                    .frame(width: 6, height: 6)
-            }
+            Circle()
+                .fill(Color.red)
+                .frame(width: 6, height: 6)
             
             // Show file path for external file
             if isEditingExternalFile, let url = externalFileURL {
