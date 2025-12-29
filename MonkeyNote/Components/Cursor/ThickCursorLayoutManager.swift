@@ -19,6 +19,83 @@ class ThickCursorLayoutManager: NSLayoutManager {
     static let horizontalRuleKey = NSAttributedString.Key("horizontalRule")
     // Custom attribute key for callout
     static let calloutKey = NSAttributedString.Key("callout")
+    // Custom attribute key for rendering dash as bullet
+    static let renderAsBulletKey = NSAttributedString.Key("renderAsBullet")
+    
+    // MARK: - Draw Glyphs (for bullet rendering)
+    
+    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        guard let textStorage = textStorage else {
+            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+            return
+        }
+        
+        let characterRange = self.characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        
+        // Find ranges that need bullet rendering
+        var bulletRanges: [(range: NSRange, color: NSColor)] = []
+        
+        textStorage.enumerateAttribute(Self.renderAsBulletKey, in: characterRange, options: []) { value, range, _ in
+            guard value != nil else { return }
+            
+            // Get the foreground color for this range
+            let color = textStorage.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor ?? NSColor(red: 0.7, green: 0.4, blue: 0.9, alpha: 1.0)
+            bulletRanges.append((range, color))
+        }
+        
+        // Draw normal glyphs first (excluding bullet ranges)
+        if bulletRanges.isEmpty {
+            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+        } else {
+            // Draw glyphs in segments, skipping bullet ranges
+            var currentLocation = glyphsToShow.location
+            let endLocation = glyphsToShow.location + glyphsToShow.length
+            
+            for bulletRange in bulletRanges.sorted(by: { $0.range.location < $1.range.location }) {
+                let bulletGlyphRange = self.glyphRange(forCharacterRange: bulletRange.range, actualCharacterRange: nil)
+                
+                // Draw glyphs before this bullet range
+                if currentLocation < bulletGlyphRange.location {
+                    let beforeRange = NSRange(location: currentLocation, length: bulletGlyphRange.location - currentLocation)
+                    super.drawGlyphs(forGlyphRange: beforeRange, at: origin)
+                }
+                
+                // Draw bullet instead of "- "
+                drawBullet(forGlyphRange: bulletGlyphRange, at: origin, color: bulletRange.color)
+                
+                currentLocation = bulletGlyphRange.location + bulletGlyphRange.length
+            }
+            
+            // Draw remaining glyphs after last bullet
+            if currentLocation < endLocation {
+                let afterRange = NSRange(location: currentLocation, length: endLocation - currentLocation)
+                super.drawGlyphs(forGlyphRange: afterRange, at: origin)
+            }
+        }
+    }
+    
+    private func drawBullet(forGlyphRange glyphRange: NSRange, at origin: NSPoint, color: NSColor) {
+        guard let textContainer = textContainers.first else { return }
+        
+        // Get the rect for the "- " text
+        var boundingRect = self.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        boundingRect.origin.x += origin.x
+        boundingRect.origin.y += origin.y
+        
+        // Get font from text storage
+        let characterRange = self.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        let font = textStorage?.attribute(.font, at: characterRange.location, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 14)
+        
+        // Draw "• " instead of "- "
+        let bulletString = "• "
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color
+        ]
+        
+        let attrString = NSAttributedString(string: bulletString, attributes: attributes)
+        attrString.draw(at: boundingRect.origin)
+    }
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)

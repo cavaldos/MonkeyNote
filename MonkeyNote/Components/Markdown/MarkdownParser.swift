@@ -62,6 +62,9 @@ class MarkdownParser {
             // Bullet list - match bullet at start of line (only the bullet, not the space)
             ("^(•)", .bulletList, 0, 0),
             
+            // Dash list - match dash at start of line followed by space (convert to bullet style)
+            ("^(- )", .bulletList, 0, 0),
+            
             // Blockquote - match > at start of line with content
             // Note: callout lines (> [!type]) are handled separately in parse()
             ("^> (.+)$", .blockquote, 2, 0),

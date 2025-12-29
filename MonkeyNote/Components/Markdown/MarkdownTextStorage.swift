@@ -457,6 +457,22 @@ class MarkdownTextStorage: NSTextStorage {
             return
         }
         
+        // For bullet list, check if it's a dash that needs to be rendered as bullet
+        if case .bulletList = match.style {
+            let matchText = (backingStore.string as NSString).substring(with: match.range)
+            if matchText == "- " {
+                // Replace "- " with "• " visually by hiding the dash and showing bullet
+                // We'll use a special attribute to render bullet instead
+                let bulletAttributes: [NSAttributedString.Key: Any] = [
+                    .font: baseFont,
+                    .foregroundColor: NSColor(red: 0.7, green: 0.4, blue: 0.9, alpha: 1.0), // Purple
+                    NSAttributedString.Key("renderAsBullet"): true
+                ]
+                backingStore.addAttributes(bulletAttributes, range: match.range)
+                return
+            }
+        }
+        
         // Apply style to content
         let styleAttributes = parser.attributes(for: match.style, baseFont: baseFont)
         
