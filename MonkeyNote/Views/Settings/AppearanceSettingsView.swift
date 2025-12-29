@@ -73,7 +73,7 @@ struct AppearanceSettingsView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Animation Duration: \(String(format: "%.2f", cursorAnimationDuration))s")
                                 .font(.subheadline)
-                            Slider(value: $cursorAnimationDuration, in: 0.05...0.5)
+                            Slider(value: $cursorAnimationDuration, in: 0.05...0.3)
                                 .frame(maxWidth: 250)
                         }
                     }

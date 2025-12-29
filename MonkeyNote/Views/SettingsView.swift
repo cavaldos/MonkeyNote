@@ -30,6 +30,8 @@ struct SettingsView: View {
                             AppearanceSettingsView()
                         case .autocomplete:
                             AutocompleteSettingsView()
+                        case .keyboard:
+                            KeyboardSettingsView()
                         case .about:
                             AboutSettingsView()
                         }

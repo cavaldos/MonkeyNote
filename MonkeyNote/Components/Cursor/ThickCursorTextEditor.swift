@@ -30,6 +30,12 @@ private class ThickCursorTextView: NSTextView {
     var autocompleteOpacity: Double = 0.5
     var suggestionMode: String = "word"  // "word" or "sentence"
     
+    // Double-tap navigation
+    var doubleTapNavigationEnabled: Bool = true
+    var doubleTapDelay: Double = 300  // milliseconds
+    private var lastKeyCode: UInt16 = 0
+    private var lastKeyTime: Date = Date.distantPast
+    
     // Search navigation
     var currentSearchIndex: Int = 0
     var onSearchMatchesChanged: ((Int, Bool) -> Void)?  // (count, isComplete)
@@ -752,6 +758,41 @@ private class ThickCursorTextView: NSTextView {
             return
         }
         
+        // Handle double-tap navigation (Delete, Left Arrow, Right Arrow)
+        if doubleTapNavigationEnabled {
+            let currentKeyCode = event.keyCode
+            let now = Date()
+            let timeSinceLastKey = now.timeIntervalSince(lastKeyTime) * 1000 // Convert to milliseconds
+            
+            // Check if this is a double-tap (same key pressed within delay threshold)
+            let isDoubleTap = currentKeyCode == lastKeyCode && timeSinceLastKey <= doubleTapDelay
+            
+            // Update tracking for next check
+            lastKeyCode = currentKeyCode
+            lastKeyTime = now
+            
+            if isDoubleTap {
+                switch currentKeyCode {
+                case 51: // Delete/Backspace - delete word backward (like Option+Delete)
+                    // First delete undoes the character deleted by first tap, then delete word
+                    deleteWordBackward(nil)
+                    return
+                case 123: // Left Arrow - move to previous word (like Option+Left)
+                    // First move undoes the character move by first tap
+                    moveRight(nil)
+                    moveWordLeft(nil)
+                    return
+                case 124: // Right Arrow - move to next word (like Option+Right)
+                    // First move undoes the character move by first tap
+                    moveLeft(nil)
+                    moveWordRight(nil)
+                    return
+                default:
+                    break
+                }
+            }
+        }
+        
         // Handle Tab key - check for autocomplete suggestion first
         if event.keyCode == 48 {
             // Try to accept autocomplete suggestion first
@@ -1361,6 +1402,10 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     var markdownRenderEnabled: Bool = true
     var horizontalPadding: CGFloat = 0
     
+    // Double-tap navigation
+    var doubleTapNavigationEnabled: Bool = true
+    var doubleTapDelay: Double = 300
+    
     // Search navigation
     var currentSearchIndex: Int = 0
     var onSearchMatchesChanged: ((Int, Bool) -> Void)? = nil  // Reports (count, isComplete)
@@ -1402,6 +1447,8 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.autocompleteDelay = autocompleteDelay
         textView.autocompleteOpacity = autocompleteOpacity
         textView.suggestionMode = suggestionMode
+        textView.doubleTapNavigationEnabled = doubleTapNavigationEnabled
+        textView.doubleTapDelay = doubleTapDelay
         textView.isRichText = true  // Enable rich text for markdown styling
         textView.allowsUndo = true
         textView.isEditable = true
@@ -1495,6 +1542,8 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.autocompleteDelay = autocompleteDelay
         textView.autocompleteOpacity = autocompleteOpacity
         textView.suggestionMode = suggestionMode
+        textView.doubleTapNavigationEnabled = doubleTapNavigationEnabled
+        textView.doubleTapDelay = doubleTapDelay
         if let layoutManager = textView.layoutManager as? ThickCursorLayoutManager {
             layoutManager.cursorWidth = cursorWidth
         }

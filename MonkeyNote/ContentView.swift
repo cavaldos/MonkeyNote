@@ -188,6 +188,8 @@ struct ContentView: View {
     @AppStorage("note.suggestionMode") private var suggestionMode: String = "word"
     @AppStorage("note.markdownRenderEnabled") private var markdownRenderEnabled: Bool = true
     @AppStorage("note.sortOption") private var sortOptionRaw: String = NoteSortOption.dateNewest.rawValue
+    @AppStorage("note.doubleTapNavigationEnabled") private var doubleTapNavigationEnabled: Bool = true
+    @AppStorage("note.doubleTapDelay") private var doubleTapDelay: Double = 200
     
     private var sortOption: NoteSortOption {
         get { NoteSortOption(rawValue: sortOptionRaw) ?? .dateNewest }
@@ -557,6 +559,8 @@ struct ContentView: View {
             suggestionMode: suggestionMode,
             markdownRenderEnabled: markdownRenderEnabled,
             horizontalPadding: 46,
+            doubleTapNavigationEnabled: doubleTapNavigationEnabled,
+            doubleTapDelay: doubleTapDelay,
             currentSearchIndex: currentSearchIndex,
             onSearchMatchesChanged: { count, isComplete in
                 searchMatchCount = count
