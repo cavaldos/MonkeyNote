@@ -1293,6 +1293,9 @@ private class ThickCursorTextView: NSTextView {
     private func handleSelectionChange() {
         let selectedRange = self.selectedRange()
         
+        // Hide autocomplete suggestion when cursor moves
+        hideSuggestion()
+        
         // Update cursor position in MarkdownTextStorage for syntax visibility
         if let textStorage = self.textStorage as? MarkdownTextStorage {
             textStorage.cursorPosition = selectedRange.location
