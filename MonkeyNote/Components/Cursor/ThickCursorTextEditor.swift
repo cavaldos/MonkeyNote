@@ -502,6 +502,12 @@ private class ThickCursorTextView: NSTextView {
         // Cancel any pending suggestion task
         suggestionTask?.cancel()
         
+        // Hide ghost text immediately when user types (no delay for hiding)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        ghostTextLayer?.isHidden = true
+        CATransaction.commit()
+        
         // If delay is 0, show immediately
         if autocompleteDelay <= 0 {
             performSuggestionUpdate()
