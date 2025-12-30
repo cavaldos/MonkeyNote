@@ -51,5 +51,14 @@ struct SettingsView: View {
                 }
             }
         }
+        .onAppear {
+            if let savedTab = UserDefaults.standard.string(forKey: "selectedSettingsTab"),
+               let tab = SettingsTab(rawValue: savedTab) {
+                selectedTab = tab
+            }
+        }
+        .onChange(of: selectedTab) { newValue in
+            UserDefaults.standard.set(newValue.rawValue, forKey: "selectedSettingsTab")
+        }
     }
 }
