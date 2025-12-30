@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct AppearanceSettingsView: View {
+    @State private var showFontPreviewer: Bool = false
     @AppStorage("note.isDarkMode") private var isDarkMode: Bool = true
     @AppStorage("note.fontFamily") private var fontFamily: String = "monospaced"
     @AppStorage("note.fontSize") private var fontSize: Double = 28
@@ -77,6 +78,12 @@ struct AppearanceSettingsView: View {
                         Text("Preview")
                             .font(.system(size: fontSize, weight: .regular, design: FontHelper.getFontDesign(from: fontFamily)))
                             .foregroundStyle(.secondary)
+                        
+                        Button("Preview All Fonts") {
+                            showFontPreviewer = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
                 }
             }
@@ -108,6 +115,9 @@ struct AppearanceSettingsView: View {
         }
         .onAppear {
             loadRecentFonts()
+        }
+        .sheet(isPresented: $showFontPreviewer) {
+            FontPreviewerView()
         }
     }
 
