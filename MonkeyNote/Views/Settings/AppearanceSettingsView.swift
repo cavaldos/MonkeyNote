@@ -28,6 +28,8 @@ struct AppearanceSettingsView: View {
         return defaults + systemFonts.filter { !defaults.contains($0) }
     }()
 
+    @State private var recentFonts: [String] = []
+
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             SettingsSection("Theme") {
@@ -42,15 +44,30 @@ struct AppearanceSettingsView: View {
             SettingsSection("Font") {
                 VStack(alignment: .leading, spacing: 16) {
                     Picker("Font Family", selection: $fontFamily) {
-                        ForEach(defaultFonts, id: \.self) { family in
-                            Text(family.capitalized).tag(family)
+                        if !recentFonts.isEmpty {
+                            Section("Recent Fonts") {
+                                ForEach(recentFonts, id: \.self) { family in
+                                    Text(family.capitalized).tag(family)
+                                }
+                            }
                         }
-                        Divider()
-                        ForEach(availableFonts, id: \.self) { family in
-                            Text(family).tag(family)
+                        
+                        Section("Default") {
+                            ForEach(defaultFonts, id: \.self) { family in
+                                Text(family.capitalized).tag(family)
+                            }
+                        }
+                        
+                        Section("All Fonts") {
+                            ForEach(availableFonts, id: \.self) { family in
+                                Text(family).tag(family)
+                            }
                         }
                     }
                     .frame(maxWidth: 200)
+                    .onChange(of: fontFamily) { newValue in
+                        addToRecentFonts(newValue)
+                    }
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Font Size: \(Int(fontSize))")
@@ -89,5 +106,25 @@ struct AppearanceSettingsView: View {
 
             Spacer()
         }
+        .onAppear {
+            loadRecentFonts()
+        }
+    }
+
+    private func addToRecentFonts(_ font: String) {
+        var fonts = loadRecentFontsArray()
+        fonts.removeAll { $0 == font }
+        fonts.insert(font, at: 0)
+        fonts = Array(fonts.prefix(10))
+        UserDefaults.standard.set(fonts, forKey: "recentFonts")
+        recentFonts = fonts
+    }
+
+    private func loadRecentFonts() {
+        recentFonts = loadRecentFontsArray()
+    }
+
+    private func loadRecentFontsArray() -> [String] {
+        UserDefaults.standard.stringArray(forKey: "recentFonts") ?? []
     }
 }
