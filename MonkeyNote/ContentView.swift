@@ -136,6 +136,7 @@ struct ContentView: View {
     @State private var searchText: String = ""
     @State private var replaceText: String = ""
     @State private var showReplaceMode: Bool = false
+    @State private var showReplacePopover: Bool = false
     
     // Search navigation state
     @State private var searchMatchCount: Int = 0
@@ -613,6 +614,7 @@ struct ContentView: View {
         searchText = ""
         replaceText = ""
         showReplaceMode = false
+        showReplacePopover = false
         currentSearchIndex = 0
         searchMatchCount = 0
     }
@@ -1255,9 +1257,7 @@ struct ContentView: View {
                 HStack(spacing: 6) {
                     // Toggle replace button
                     Button {
-                        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                            showReplaceMode.toggle()
-                        }
+                        showReplacePopover.toggle()
                     } label: {
                         Image(systemName: showReplaceMode ? "chevron.down.circle.fill" : "chevron.down.circle")
                             .font(.system(size: 11))
@@ -1266,6 +1266,54 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Toggle replace mode")
+                    #if os(macOS)
+                    .popover(isPresented: $showReplacePopover, arrowEdge: .bottom) {
+                        VStack(spacing: 8) {
+                            HStack(spacing: 8) {
+                                Text("Replace:")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                TextField("Replace with...", text: $replaceText)
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 12))
+                                    .frame(width: 160)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
+                                    )
+                            }
+                            
+                            if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                HStack(spacing: 8) {
+                                    Button("Replace") {
+                                        replaceCurrentMatch()
+                                        showReplaceMode = true
+                                    }
+                                    .disabled(searchMatchCount == 0)
+                                    .controlSize(.small)
+                                    
+                                    Button("Replace All") {
+                                        replaceAll()
+                                        showReplaceMode = true
+                                    }
+                                    .disabled(searchMatchCount == 0)
+                                    .controlSize(.small)
+                                    
+                                    Spacer()
+                                    
+                                    Button("Cancel") {
+                                        showReplacePopover = false
+                                    }
+                                    .controlSize(.small)
+                                }
+                            }
+                        }
+                        .padding(12)
+                        .frame(width: 260)
+                    }
+                    #endif
                     
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
@@ -1360,15 +1408,7 @@ struct ContentView: View {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
                 )
-                .overlay(alignment: .bottom) {
-                    if showReplaceMode && !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        replaceBar
-                            .offset(y: 32)
-                            .transition(.opacity.combined(with: .offset(y: 20)))
-                    }
-                }
                 .animation(.spring(response: 0.20, dampingFraction: 0.5), value: searchText.isEmpty)
-                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: showReplaceMode)
             }
         }
     }
