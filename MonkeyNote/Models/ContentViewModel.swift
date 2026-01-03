@@ -109,11 +109,6 @@ final class ContentViewModel {
         set { UserDefaults.standard.set(newValue, forKey: "note.suggestionMode") }
     }
     
-    var markdownRenderEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: "note.markdownRenderEnabled") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "note.markdownRenderEnabled") }
-    }
-    
     var sortOptionRaw: String {
         get { UserDefaults.standard.string(forKey: "note.sortOption") ?? NoteSortOption.dateNewest.rawValue }
         set { UserDefaults.standard.set(newValue, forKey: "note.sortOption") }

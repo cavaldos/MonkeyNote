@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		579D95352F08F5C800A391AA /* SwiftTreeSitter in Frameworks */ = {isa = PBXBuildFile; productRef = 579D95342F08F5C800A391AA /* SwiftTreeSitter */; };
+		579D95372F08F5C800A391AA /* SwiftTreeSitterLayer in Frameworks */ = {isa = PBXBuildFile; productRef = 579D95362F08F5C800A391AA /* SwiftTreeSitterLayer */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		57D33EE22EFCF1C2001DC7A6 /* MonkeyNote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MonkeyNote.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +28,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				579D95352F08F5C800A391AA /* SwiftTreeSitter in Frameworks */,
+				579D95372F08F5C800A391AA /* SwiftTreeSitterLayer in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +72,8 @@
 			);
 			name = MonkeyNote;
 			packageProductDependencies = (
+				579D95342F08F5C800A391AA /* SwiftTreeSitter */,
+				579D95362F08F5C800A391AA /* SwiftTreeSitterLayer */,
 			);
 			productName = MonkeyNote;
 			productReference = 57D33EE22EFCF1C2001DC7A6 /* MonkeyNote.app */;
@@ -94,6 +103,9 @@
 			);
 			mainGroup = 57D33ED92EFCF1C1001DC7A6;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				579D95332F08F5C800A391AA /* XCRemoteSwiftPackageReference "swift-tree-sitter" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 57D33EE32EFCF1C2001DC7A6 /* Products */;
 			projectDirPath = "";
@@ -328,6 +340,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		579D95332F08F5C800A391AA /* XCRemoteSwiftPackageReference "swift-tree-sitter" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tree-sitter/swift-tree-sitter";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.25.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		579D95342F08F5C800A391AA /* SwiftTreeSitter */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 579D95332F08F5C800A391AA /* XCRemoteSwiftPackageReference "swift-tree-sitter" */;
+			productName = SwiftTreeSitter;
+		};
+		579D95362F08F5C800A391AA /* SwiftTreeSitterLayer */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 579D95332F08F5C800A391AA /* XCRemoteSwiftPackageReference "swift-tree-sitter" */;
+			productName = SwiftTreeSitterLayer;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 57D33EDA2EFCF1C1001DC7A6 /* Project object */;
 }

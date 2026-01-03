@@ -122,7 +122,6 @@ struct DetailEditorView: View {
                 autocompleteDelay: viewModel.autocompleteDelay,
                 autocompleteOpacity: viewModel.autocompleteOpacity,
                 suggestionMode: viewModel.suggestionMode,
-                markdownRenderEnabled: viewModel.markdownRenderEnabled,
                 horizontalPadding: 46,
                 doubleTapNavigationEnabled: viewModel.doubleTapNavigationEnabled,
                 doubleTapDelay: viewModel.doubleTapDelay,
@@ -171,14 +170,6 @@ struct DetailEditorView: View {
         
         // Pomodoro timer
         PomodoroTimerView()
-        
-        // Markdown render toggle button
-        ThemeIconButton(
-            systemImage: viewModel.markdownRenderEnabled ? "text.badge.checkmark" : "text.badge.xmark",
-            isSelected: viewModel.markdownRenderEnabled,
-            action: { vm.markdownRenderEnabled.toggle() },
-            tooltip: viewModel.markdownRenderEnabled ? "Markdown: ON (click to disable)" : "Markdown: OFF (click to enable)"
-        )
         
         ThemeIconButton(
             systemImage: "pencil",
