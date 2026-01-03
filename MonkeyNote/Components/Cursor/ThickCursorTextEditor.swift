@@ -774,6 +774,29 @@ private class ThickCursorTextView: NSTextView {
         dictionaryLookupController?.dismiss()
         dictionaryLookupRange = nil
     }
+    
+    // MARK: - Handle Cmd+F for search with selected text
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // Handle Cmd+F - search with selected text
+        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers?.lowercased() == "f" {
+            let selectedRange = self.selectedRange()
+            if selectedRange.length > 0 {
+                // Get selected text and send to search
+                let text = self.string as NSString
+                let selectedText = text.substring(with: selectedRange)
+                NotificationCenter.default.post(
+                    name: Notification.Name("focusSearchWithText"),
+                    object: nil,
+                    userInfo: ["text": selectedText]
+                )
+            } else {
+                // No selection, just focus search
+                NotificationCenter.default.post(name: Notification.Name("focusSearch"), object: nil)
+            }
+            return true  // Event handled
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 
     override func keyDown(with event: NSEvent) {
         // Handle slash command menu navigation

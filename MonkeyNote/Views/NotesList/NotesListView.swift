@@ -235,6 +235,7 @@ struct NotesListView: View {
         } label: {
             Image(systemName: "arrow.up.arrow.down")
         }
+        .menuIndicator(.hidden)
         .help("Sort notes")
     }
 }

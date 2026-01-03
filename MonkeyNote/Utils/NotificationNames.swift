@@ -9,6 +9,7 @@ import Foundation
 
 extension Notification.Name {
     static let focusSearch = Notification.Name("focusSearch")
+    static let focusSearchWithText = Notification.Name("focusSearchWithText")
     static let focusEditor = Notification.Name("focusEditor")
     static let scrollToLine = Notification.Name("scrollToLine")
 }

@@ -24,12 +24,22 @@ struct FocusableSearchField: NSViewRepresentable {
         textField.focusRingType = .none
         textField.delegate = context.coordinator
         
+        // Listen for focusSearch notification (no text)
         NotificationCenter.default.addObserver(
             context.coordinator,
             selector: #selector(Coordinator.focusTextField),
             name: .focusSearch,
             object: nil
         )
+        
+        // Listen for focusSearchWithText notification (with selected text)
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.focusTextFieldWithText(_:)),
+            name: .focusSearchWithText,
+            object: nil
+        )
+        
         context.coordinator.textField = textField
         
         return textField
@@ -62,6 +72,19 @@ struct FocusableSearchField: NSViewRepresentable {
         @objc func focusTextField() {
             DispatchQueue.main.async {
                 self.textField?.window?.makeFirstResponder(self.textField)
+            }
+        }
+        
+        @objc func focusTextFieldWithText(_ notification: Notification) {
+            DispatchQueue.main.async {
+                // Get selected text from notification
+                if let selectedText = notification.userInfo?["text"] as? String {
+                    self.text = selectedText
+                    self.textField?.stringValue = selectedText
+                }
+                self.textField?.window?.makeFirstResponder(self.textField)
+                // Select all text in the search field
+                self.textField?.selectText(nil)
             }
         }
         
