@@ -11,6 +11,7 @@ struct NoteRowView: View {
     @Environment(ContentViewModel.self) var viewModel
     
     let note: NoteItem
+    var folderName: String? = nil  // Optional: shown in global search results
     
     var body: some View {
         HStack {
@@ -28,10 +29,22 @@ struct NoteRowView: View {
                         .lineLimit(1)
                 }
                 
-                viewModel.highlightedText(viewModel.notePreview(for: note.text), searchText: viewModel.searchText)
-                    .font(.system(.footnote, design: .monospaced))
+                // Show folder name in global search, otherwise show preview
+                if let folder = folderName {
+                    HStack(spacing: 4) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 10))
+                        Text(folder)
+                            .font(.system(.footnote, design: .monospaced))
+                    }
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                } else {
+                    viewModel.highlightedText(viewModel.notePreview(for: note.text), searchText: viewModel.searchText)
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
             
             Spacer()

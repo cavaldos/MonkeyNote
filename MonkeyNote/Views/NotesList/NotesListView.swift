@@ -20,42 +20,18 @@ struct NotesListView: View {
         ZStack {
             background
             
-            if let folder = viewModel.selectedFolder {
-                List(selection: Binding(
-                    get: { viewModel.selectedNoteID },
-                    set: { newValue in
-                        // Check if trying to select a large file
-                        if let noteID = newValue,
-                           let note = folder.notes.first(where: { $0.id == noteID }),
-                           note.isTooLarge {
-                            // Block selection - show alert
-                            largeFileInfo = (note.title, note.lineCount)
-                            showLargeFileAlert = true
-                            return
-                        }
-                        
-                        // Close external file if selecting vault note
-                        if newValue != nil && viewModel.isEditingExternalFile {
-                            viewModel.closeExternalFile()
-                        }
-                        
-                        vm.selectedNoteID = newValue
-                    }
-                )) {
-                    ForEach(viewModel.filteredNotes(in: folder)) { note in
-                        NoteRowView(note: note)
-                    }
-                }
-                .scrollContentBackground(.hidden)
-                .clipped()
-                .id(viewModel.searchText)
+            // Show global search results or normal notes list
+            if viewModel.isGlobalSearchMode {
+                globalSearchList
+            } else if let folder = viewModel.selectedFolder {
+                notesList(folder: folder)
             } else {
                 Text("Choose a folder")
                     .foregroundStyle(.secondary)
             }
         }
         .clipped()
-        .navigationTitle(viewModel.selectedFolderID == nil ? "Notes" : (viewModel.selectedFolder?.name ?? "Notes"))
+        .navigationTitle(navigationTitle)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 8) {
@@ -79,6 +55,103 @@ struct NotesListView: View {
                 Text("\"\(info.name)\" has \(info.lines) lines.\nMaximum allowed: \(VaultManager.maxAllowedLines) lines.")
             }
         }
+    }
+    
+    // MARK: - Navigation Title
+    
+    private var navigationTitle: String {
+        if viewModel.isGlobalSearchMode && !viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Search Results"
+        }
+        return viewModel.selectedFolderID == nil ? "Notes" : (viewModel.selectedFolder?.name ?? "Notes")
+    }
+    
+    // MARK: - Notes List
+    
+    /// Global search list - shows matching notes from ALL folders
+    private var globalSearchList: some View {
+        let results = viewModel.globalSearchResults()
+        
+        return List(selection: Binding(
+            get: { viewModel.selectedNoteID },
+            set: { newValue in
+                // Find the note and its folder
+                if let noteID = newValue,
+                   let result = results.first(where: { $0.note.id == noteID }) {
+                    let note = result.note
+                    let folder = result.folder
+                    
+                    // Check if trying to select a large file
+                    if note.isTooLarge {
+                        largeFileInfo = (note.title, note.lineCount)
+                        showLargeFileAlert = true
+                        return
+                    }
+                    
+                    // Close external file if selecting vault note
+                    if viewModel.isEditingExternalFile {
+                        viewModel.closeExternalFile()
+                    }
+                    
+                    // Switch to the folder containing this note
+                    viewModel.selectedFolderID = folder.id
+                    viewModel.selectedNoteID = noteID
+                } else {
+                    viewModel.selectedNoteID = newValue
+                }
+            }
+        )) {
+            if results.isEmpty && viewModel.isSearching {
+                // Still searching
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Searching...")
+                        .foregroundStyle(.secondary)
+                }
+            } else if results.isEmpty {
+                Text("No results found")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(results, id: \.note.id) { result in
+                    NoteRowView(note: result.note, folderName: result.folder.name)
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .clipped()
+        .id(viewModel.searchText + String(viewModel.matchingFilePaths.count))
+    }
+    
+    private func notesList(folder: NoteFolder) -> some View {
+        List(selection: Binding(
+            get: { viewModel.selectedNoteID },
+            set: { newValue in
+                // Check if trying to select a large file
+                if let noteID = newValue,
+                   let note = folder.notes.first(where: { $0.id == noteID }),
+                   note.isTooLarge {
+                    // Block selection - show alert
+                    largeFileInfo = (note.title, note.lineCount)
+                    showLargeFileAlert = true
+                    return
+                }
+                
+                // Close external file if selecting vault note
+                if newValue != nil && viewModel.isEditingExternalFile {
+                    viewModel.closeExternalFile()
+                }
+                
+                viewModel.selectedNoteID = newValue
+            }
+        )) {
+            ForEach(viewModel.filteredNotes(in: folder)) { note in
+                NoteRowView(note: note)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .clipped()
+        .id(viewModel.searchText)
     }
     
     // MARK: - Background

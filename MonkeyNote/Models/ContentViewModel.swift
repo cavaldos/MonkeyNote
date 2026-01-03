@@ -39,6 +39,14 @@ final class ContentViewModel {
     var currentSearchIndex: Int = 0
     var isSearchComplete: Bool = true
     
+    // MARK: - Global Search State (Ripgrep)
+    var matchingFilePaths: Set<String> = []  // File paths that match search
+    var isSearching: Bool = false
+    var searchUseRegex: Bool = false
+    var searchCaseSensitive: Bool = false
+    private var searchTask: Task<Void, Never>?
+    private let searchDebounceDelay: TimeInterval = 0.3
+    
     // MARK: - UI State
     var showSettings: Bool = false
     var showTrash: Bool = false
@@ -385,6 +393,11 @@ final class ContentViewModel {
         showReplacePopover = false
         currentSearchIndex = 0
         searchMatchCount = 0
+        // Clear global search
+        matchingFilePaths = []
+        isSearching = false
+        searchTask?.cancel()
+        searchTask = nil
     }
     
     func updateSearchMatches(count: Int, isComplete: Bool) {
@@ -462,6 +475,84 @@ final class ContentViewModel {
         }
         
         return matches
+    }
+    
+    // MARK: - Global Search (Ripgrep)
+    
+    /// Trigger global search with debounce
+    func performGlobalSearch() {
+        // Cancel previous search
+        searchTask?.cancel()
+        
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Clear results if query is empty
+        if query.isEmpty {
+            matchingFilePaths = []
+            isSearching = false
+            return
+        }
+        
+        isSearching = true
+        
+        // Debounced search
+        searchTask = Task { @MainActor in
+            // Wait for debounce
+            try? await Task.sleep(nanoseconds: UInt64(searchDebounceDelay * 1_000_000_000))
+            
+            // Check if cancelled
+            guard !Task.isCancelled else { return }
+            
+            // Check vault
+            guard let vaultURL = vaultManager.vaultURL else {
+                isSearching = false
+                return
+            }
+            
+            // Build search options
+            let options = SearchOptions(
+                isRegex: searchUseRegex,
+                caseSensitive: searchCaseSensitive,
+                maxResults: 500,
+                fileExtensions: ["md", "markdown", "txt"]
+            )
+            
+            do {
+                let result = try await RipgrepService.shared.search(
+                    query: query,
+                    in: vaultURL,
+                    options: options
+                )
+                
+                // Check if still relevant (query hasn't changed)
+                guard !Task.isCancelled,
+                      searchText.trimmingCharacters(in: .whitespacesAndNewlines) == query else {
+                    return
+                }
+                
+                // Update matching file paths
+                matchingFilePaths = result.matchingFiles
+                isSearching = false
+                
+            } catch {
+                print("❌ Global search error: \(error)")
+                isSearching = false
+                // Fallback: clear matching files so all notes show (with in-memory filter)
+                matchingFilePaths = []
+            }
+        }
+    }
+    
+    /// Toggle regex mode
+    func toggleRegexMode() {
+        searchUseRegex.toggle()
+        performGlobalSearch()
+    }
+    
+    /// Toggle case sensitivity
+    func toggleCaseSensitivity() {
+        searchCaseSensitive.toggle()
+        performGlobalSearch()
     }
     
     // MARK: - Folder Operations
@@ -643,12 +734,127 @@ final class ContentViewModel {
     
     // MARK: - Filter & Sort
     
+    /// Check if we're in global search mode (searching across all folders)
+    var isGlobalSearchMode: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    
+    /// Get relative path for a note (used for matching with ripgrep results)
+    func getRelativePath(for note: NoteItem, in folder: NoteFolder) -> String {
+        // Get folder path from vault manager
+        if let folderPath = vaultManager.getFolderPath(folderID: folder.id, in: folders) {
+            let sanitizedPath = folderPath.map { sanitizeForPath($0) }.joined(separator: "/")
+            let sanitizedTitle = sanitizeForPath(note.title)
+            return "\(sanitizedPath)/\(sanitizedTitle).md"
+        }
+        return ""
+    }
+    
+    /// Sanitize string for file path matching (same logic as VaultManager)
+    private func sanitizeForPath(_ name: String) -> String {
+        let allowedCharacters = CharacterSet.alphanumerics
+            .union(CharacterSet(charactersIn: " -_"))
+        
+        var sanitized = ""
+        for character in name {
+            if allowedCharacters.contains(character.unicodeScalars.first!) {
+                sanitized += String(character)
+            }
+        }
+        
+        sanitized = sanitized.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        sanitized = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        while sanitized.hasPrefix(".") {
+            sanitized.removeFirst()
+        }
+        
+        return sanitized.isEmpty ? "Untitled" : sanitized
+    }
+    
+    /// Get all notes matching the global search (across ALL folders)
+    func globalSearchResults() -> [(note: NoteItem, folder: NoteFolder)] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        
+        var results: [(note: NoteItem, folder: NoteFolder)] = []
+        
+        // Collect all matching notes recursively
+        func collectMatches(from folderList: [NoteFolder]) {
+            for folder in folderList {
+                for note in folder.notes {
+                    let relativePath = getRelativePath(for: note, in: folder)
+                    
+                    // If ripgrep has results, use them; otherwise fallback to in-memory
+                    let matches: Bool
+                    if !matchingFilePaths.isEmpty {
+                        matches = matchingFilePaths.contains(relativePath)
+                    } else if isSearching {
+                        // Still searching, use in-memory as placeholder
+                        matches = note.title.localizedCaseInsensitiveContains(q) ||
+                                  note.text.localizedCaseInsensitiveContains(q)
+                    } else {
+                        // Ripgrep finished with no results, or failed - use in-memory
+                        matches = note.title.localizedCaseInsensitiveContains(q) ||
+                                  note.text.localizedCaseInsensitiveContains(q)
+                    }
+                    
+                    if matches {
+                        results.append((note: note, folder: folder))
+                    }
+                }
+                
+                // Recurse into children
+                collectMatches(from: folder.children)
+            }
+        }
+        
+        collectMatches(from: folders)
+        
+        // Sort results
+        return results.sorted { item1, item2 in
+            let note1 = item1.note
+            let note2 = item2.note
+            
+            if note1.isPinned != note2.isPinned {
+                return note1.isPinned
+            }
+            
+            switch sortOption {
+            case .nameAscending:
+                return note1.title.localizedCaseInsensitiveCompare(note2.title) == .orderedAscending
+            case .nameDescending:
+                return note1.title.localizedCaseInsensitiveCompare(note2.title) == .orderedDescending
+            case .dateNewest:
+                return note1.updatedAt > note2.updatedAt
+            case .dateOldest:
+                return note1.updatedAt < note2.updatedAt
+            case .createdNewest:
+                return note1.createdAt > note2.createdAt
+            case .createdOldest:
+                return note1.createdAt < note2.createdAt
+            }
+        }
+    }
+    
     func filteredNotes(in folder: NoteFolder) -> [NoteItem] {
         let notes = folder.notes
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        let filtered = q.isEmpty ? notes : notes.filter { note in
-            note.title.localizedCaseInsensitiveContains(q) || note.text.localizedCaseInsensitiveContains(q)
+        let filtered: [NoteItem]
+        if q.isEmpty {
+            filtered = notes
+        } else if !matchingFilePaths.isEmpty {
+            // Use ripgrep results for filtering
+            filtered = notes.filter { note in
+                let relativePath = getRelativePath(for: note, in: folder)
+                return matchingFilePaths.contains(relativePath)
+            }
+        } else {
+            // Fallback to in-memory search
+            filtered = notes.filter { note in
+                note.title.localizedCaseInsensitiveContains(q) || note.text.localizedCaseInsensitiveContains(q)
+            }
         }
         
         return filtered.sorted { note1, note2 in
