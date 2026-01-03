@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		579D95352F08F5C800A391AA /* SwiftTreeSitter in Frameworks */ = {isa = PBXBuildFile; productRef = 579D95342F08F5C800A391AA /* SwiftTreeSitter */; };
 		579D95372F08F5C800A391AA /* SwiftTreeSitterLayer in Frameworks */ = {isa = PBXBuildFile; productRef = 579D95362F08F5C800A391AA /* SwiftTreeSitterLayer */; };
+		579D95392F08F5D000A391AA /* TreeSitterMarkdown in Frameworks */ = {isa = PBXBuildFile; productRef = 579D95382F08F5D000A391AA /* TreeSitterMarkdown */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +31,7 @@
 			files = (
 				579D95352F08F5C800A391AA /* SwiftTreeSitter in Frameworks */,
 				579D95372F08F5C800A391AA /* SwiftTreeSitterLayer in Frameworks */,
+				579D95392F08F5D000A391AA /* TreeSitterMarkdown in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -74,6 +76,7 @@
 			packageProductDependencies = (
 				579D95342F08F5C800A391AA /* SwiftTreeSitter */,
 				579D95362F08F5C800A391AA /* SwiftTreeSitterLayer */,
+				579D95382F08F5D000A391AA /* TreeSitterMarkdown */,
 			);
 			productName = MonkeyNote;
 			productReference = 57D33EE22EFCF1C2001DC7A6 /* MonkeyNote.app */;
@@ -105,6 +108,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				579D95332F08F5C800A391AA /* XCRemoteSwiftPackageReference "swift-tree-sitter" */,
+				579D95412F08F5D000A391AA /* XCRemoteSwiftPackageReference "tree-sitter-markdown" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 57D33EE32EFCF1C2001DC7A6 /* Products */;
@@ -350,6 +354,14 @@
 				minimumVersion = 0.25.0;
 			};
 		};
+		579D95412F08F5D000A391AA /* XCRemoteSwiftPackageReference "tree-sitter-markdown" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tree-sitter-grammars/tree-sitter-markdown";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.3.2;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -362,6 +374,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 579D95332F08F5C800A391AA /* XCRemoteSwiftPackageReference "swift-tree-sitter" */;
 			productName = SwiftTreeSitterLayer;
+		};
+		579D95382F08F5D000A391AA /* TreeSitterMarkdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 579D95412F08F5D000A391AA /* XCRemoteSwiftPackageReference "tree-sitter-markdown" */;
+			productName = TreeSitterMarkdown;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
