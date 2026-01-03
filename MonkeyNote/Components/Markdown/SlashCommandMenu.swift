@@ -38,7 +38,7 @@ enum SlashCommand: String, CaseIterable {
         case .heading1: return "# "
         case .heading2: return "## "
         case .heading3: return "### "
-        case .bulletedList: return "• "
+        case .bulletedList: return "- " //•
         case .numberedList: return "1. "
         case .quote: return "> "
         case .callout: return "> [!note]   "
