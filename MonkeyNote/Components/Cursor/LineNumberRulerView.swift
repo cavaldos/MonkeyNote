@@ -21,8 +21,8 @@ class LineNumberRulerView: NSRulerView {
     private var currentLine: Int = 1
     
     // Fixed width for ruler
-    private let rulerWidth: CGFloat = 44
-    private let rightPadding: CGFloat = 12
+    private let rulerWidth: CGFloat = 24
+    private let rightPadding: CGFloat = 4
     
     // MARK: - Initialization
     

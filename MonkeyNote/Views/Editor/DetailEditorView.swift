@@ -122,7 +122,7 @@ struct DetailEditorView: View {
                 autocompleteDelay: viewModel.autocompleteDelay,
                 autocompleteOpacity: viewModel.autocompleteOpacity,
                 suggestionMode: viewModel.suggestionMode,
-                horizontalPadding: 46,
+                horizontalPadding: 8,
                 showLineNumbers: viewModel.showLineNumbers,
                 doubleTapNavigationEnabled: viewModel.doubleTapNavigationEnabled,
                 doubleTapDelay: viewModel.doubleTapDelay,
@@ -137,7 +137,7 @@ struct DetailEditorView: View {
                         .font(.system(size: viewModel.fontSize, weight: .regular, design: viewModel.fontDesign))
                         .foregroundStyle(viewModel.isDarkMode ? .white.opacity(0.25) : .black.opacity(0.25))
                         .padding(.top, 0)
-                        .padding(.leading, 46 + 8)
+                        .padding(.leading, 32 + 8)
                         .allowsHitTesting(false)
                 }
             }
