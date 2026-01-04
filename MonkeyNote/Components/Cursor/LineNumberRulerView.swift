@@ -23,6 +23,7 @@ class LineNumberRulerView: NSRulerView {
     // Fixed width for ruler
     private let rulerWidth: CGFloat = 24
     private let rightPadding: CGFloat = 4
+    private let verticalOffset: CGFloat = 2
     
     // MARK: - Initialization
     
@@ -159,7 +160,7 @@ class LineNumberRulerView: NSRulerView {
         
         // Handle empty document
         if text.length == 0 {
-            let yPosition = textInset.height - visibleRect.origin.y
+            let yPosition = textInset.height - visibleRect.origin.y + verticalOffset
             drawLineNumber(1, at: yPosition, isCurrentLine: true)
             return
         }
@@ -212,7 +213,7 @@ class LineNumberRulerView: NSRulerView {
             // Add textInset to get text view coordinates
             // Subtract visibleRect.origin.y to get visible/ruler coordinates
             let yInTextView = lineRect.origin.y + textInset.height
-            let yInRuler = yInTextView - visibleRect.origin.y
+            let yInRuler = yInTextView - visibleRect.origin.y + self.verticalOffset
             
             // Only draw if visible (with some padding)
             let rulerHeight = self.bounds.height
@@ -233,7 +234,7 @@ class LineNumberRulerView: NSRulerView {
                 let lastGlyphIndex = layoutManager.glyphIndexForCharacter(at: text.length - 1)
                 let lastLineRect = layoutManager.lineFragmentRect(forGlyphAt: lastGlyphIndex, effectiveRange: nil)
                 let yInTextView = lastLineRect.origin.y + lastLineRect.height + textInset.height
-                let yInRuler = yInTextView - visibleRect.origin.y
+                let yInRuler = yInTextView - visibleRect.origin.y + verticalOffset
                 
                 let rulerHeight = self.bounds.height
                 if yInRuler >= -30 && yInRuler <= rulerHeight + 30 {
