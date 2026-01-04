@@ -188,6 +188,16 @@ private class ThickCursorTextView: NSTextView {
         extendedRect.size.width += cursorWidth
         super.setNeedsDisplay(extendedRect, avoidAdditionalLayout: flag)
     }
+    
+    // Override to fix selection highlight artifacts when deselecting
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelectingFlag)
+        
+        // Force immediate redraw when selection changes to clear artifacts
+        if !stillSelectingFlag {
+            setNeedsDisplay(visibleRect)
+        }
+    }
 
     override func resignFirstResponder() -> Bool {
         let didResign = super.resignFirstResponder()
@@ -1284,6 +1294,12 @@ private class ThickCursorTextView: NSTextView {
         // Hide autocomplete suggestion when cursor moves
         hideSuggestion()
         
+        // Force redraw to clear any lingering selection artifacts
+        if selectedRange.length == 0 {
+            // No selection - ensure any selection highlight is cleared
+            needsDisplay = true
+        }
+        
         // Show selection toolbar when there's a selection (but not during search navigation)
         if selectedRange.length > 0 && !isNavigatingSearch {
             showSelectionToolbar(for: selectedRange)
@@ -1569,9 +1585,26 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         let layoutManager = ThickCursorLayoutManager()
         layoutManager.cursorWidth = cursorWidth
 
-        // Use standard NSTextStorage (no markdown rendering)
-        let textStorage = NSTextStorage()
+        // Create font for theme
+        let font: NSFont
+        switch fontFamily {
+        case "rounded":
+            font = NSFont.systemFont(ofSize: fontSize, weight: .regular)
+        case "serif":
+            font = NSFont(name: "Times New Roman", size: fontSize) ?? NSFont.systemFont(ofSize: fontSize, weight: .regular)
+        default:
+            if let customFont = NSFont(name: fontFamily, size: fontSize) {
+                font = customFont
+            } else {
+                font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+            }
+        }
+        
+        // Use MarkdownTextStorage for WYSIWYG markdown rendering
+        let theme = MarkdownTheme.forAppearance(isDark: isDarkMode, baseFont: font)
+        let textStorage = MarkdownTextStorage(theme: theme)
         textStorage.addLayoutManager(layoutManager)
+        context.coordinator.markdownStorage = textStorage
 
         let textContainer = NSTextContainer()
         textContainer.widthTracksTextView = true
@@ -1592,7 +1625,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.suggestionMode = suggestionMode
         textView.doubleTapNavigationEnabled = doubleTapNavigationEnabled
         textView.doubleTapDelay = doubleTapDelay
-        textView.isRichText = false  // Plain text mode
+        textView.isRichText = true  // Rich text mode for markdown styling
         textView.allowsUndo = true
         textView.isEditable = true
         textView.isSelectable = true
@@ -1614,19 +1647,6 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
 
-        let font: NSFont
-        switch fontFamily {
-        case "rounded":
-            font = NSFont.systemFont(ofSize: fontSize, weight: .regular)
-        case "serif":
-            font = NSFont(name: "Times New Roman", size: fontSize) ?? NSFont.systemFont(ofSize: fontSize, weight: .regular)
-        default:
-            if let customFont = NSFont(name: fontFamily, size: fontSize) {
-                font = customFont
-            } else {
-                font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-            }
-        }
         textView.font = font
         
         textView.textColor = isDarkMode
@@ -1638,6 +1658,11 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             blue: 74.0 / 255.0,
             alpha: 1.0
         )
+        
+        // // Customize selection color to avoid lingering artifacts
+        // textView.selectedTextAttributes = [
+        //     .backgroundColor: NSColor.selectedTextBackgroundColor.withAlphaComponent(0.3)
+        // ] 
 
         textView.delegate = context.coordinator
         textView.string = text
@@ -1657,6 +1682,8 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             let safeLocation = min(selectedRange.location, text.utf16.count)
             let safeLength = min(selectedRange.length, text.utf16.count - safeLocation)
             textView.setSelectedRange(NSRange(location: safeLocation, length: safeLength))
+            // Refresh markdown styling after text change
+            context.coordinator.markdownStorage?.refreshMarkdownStyling()
         }
 
         textView.cursorWidth = cursorWidth
@@ -1691,6 +1718,10 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         }
         textView.font = font
         
+        // Update markdown theme when dark mode or font changes
+        let newTheme = MarkdownTheme.forAppearance(isDark: isDarkMode, baseFont: font)
+        context.coordinator.markdownStorage?.updateTheme(newTheme)
+        
         let textColor = isDarkMode
             ? NSColor.white.withAlphaComponent(0.92)
             : NSColor.black.withAlphaComponent(0.92)
@@ -1720,6 +1751,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         var parent: ThickCursorTextEditor
         fileprivate weak var textView: ThickCursorTextView?
         var lastSearchIndex: Int = 0
+        var markdownStorage: MarkdownTextStorage?
 
         init(_ parent: ThickCursorTextEditor) {
             self.parent = parent
@@ -1750,7 +1782,10 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         }
         
         func textViewDidChangeSelection(_ notification: Notification) {
-            // No action needed - cursor position tracking removed with markdown rendering
+            // Update markdown storage cursor position for WYSIWYG behavior
+            guard let textView = notification.object as? NSTextView else { return }
+            let cursorPosition = textView.selectedRange().location
+            markdownStorage?.cursorPosition = cursorPosition
         }
     }
 }
