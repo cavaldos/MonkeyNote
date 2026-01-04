@@ -1561,6 +1561,9 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     var suggestionMode: String
     var horizontalPadding: CGFloat = 0
     
+    // Line numbers
+    var showLineNumbers: Bool = true
+    
     // Double-tap navigation
     var doubleTapNavigationEnabled: Bool = true
     var doubleTapDelay: Double = 300
@@ -1669,6 +1672,17 @@ struct ThickCursorTextEditor: NSViewRepresentable {
 
         scrollView.documentView = textView
         context.coordinator.textView = textView
+        
+        // Setup line number ruler view
+        if showLineNumbers {
+            scrollView.hasVerticalRuler = true
+            scrollView.rulersVisible = true
+            let rulerView = LineNumberRulerView(textView: textView, scrollView: scrollView)
+            rulerView.updateColors(isDarkMode: isDarkMode)
+            rulerView.updateFont(font)
+            scrollView.verticalRulerView = rulerView
+            context.coordinator.rulerView = rulerView
+        }
 
         return scrollView
     }
@@ -1733,6 +1747,28 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             blue: 74.0 / 255.0,
             alpha: 1.0
         )
+        
+        // Update line number ruler view
+        if showLineNumbers {
+            if let rulerView = context.coordinator.rulerView {
+                rulerView.updateColors(isDarkMode: isDarkMode)
+                rulerView.updateFont(font)
+                rulerView.needsDisplay = true
+            } else {
+                // Create ruler view if not exists
+                let rulerView = LineNumberRulerView(textView: textView, scrollView: scrollView)
+                rulerView.updateColors(isDarkMode: isDarkMode)
+                rulerView.updateFont(font)
+                scrollView.verticalRulerView = rulerView
+                scrollView.hasVerticalRuler = true
+                scrollView.rulersVisible = true
+                context.coordinator.rulerView = rulerView
+            }
+        } else {
+            // Hide ruler if disabled
+            scrollView.rulersVisible = false
+            scrollView.hasVerticalRuler = false
+        }
 
         // Check if search index changed and navigate to match
         let previousIndex = context.coordinator.lastSearchIndex
@@ -1752,6 +1788,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         fileprivate weak var textView: ThickCursorTextView?
         var lastSearchIndex: Int = 0
         var markdownStorage: MarkdownTextStorage?
+        var rulerView: LineNumberRulerView?
 
         init(_ parent: ThickCursorTextEditor) {
             self.parent = parent

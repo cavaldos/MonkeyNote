@@ -132,6 +132,11 @@ final class ContentViewModel {
         set { UserDefaults.standard.set(newValue, forKey: "note.doubleTapDelay") }
     }
     
+    var showLineNumbers: Bool {
+        get { UserDefaults.standard.object(forKey: "note.showLineNumbers") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "note.showLineNumbers") }
+    }
+    
     // MARK: - Computed Properties
     
     var sortOption: NoteSortOption {

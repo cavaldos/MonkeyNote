@@ -123,6 +123,7 @@ struct DetailEditorView: View {
                 autocompleteOpacity: viewModel.autocompleteOpacity,
                 suggestionMode: viewModel.suggestionMode,
                 horizontalPadding: 46,
+                showLineNumbers: viewModel.showLineNumbers,
                 doubleTapNavigationEnabled: viewModel.doubleTapNavigationEnabled,
                 doubleTapDelay: viewModel.doubleTapDelay,
                 currentSearchIndex: viewModel.currentSearchIndex,
