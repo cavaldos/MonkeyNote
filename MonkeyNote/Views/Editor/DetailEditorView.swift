@@ -87,11 +87,11 @@ struct DetailEditorView: View {
     private var editorContent: some View {
         VStack(spacing: 0) {
             EditorHeaderView()
-                .padding(.top, 18)
-                .padding(.horizontal, 18)
+                .padding(.top, 1)
+                .padding(.horizontal, 10)
             
             editor
-                .padding(.top, 28)
+                .padding(.top, 10)
         }
         .safeAreaInset(edge: .bottom) {
             StatusBarView()
@@ -123,7 +123,7 @@ struct DetailEditorView: View {
                 autocompleteOpacity: viewModel.autocompleteOpacity,
                 suggestionMode: viewModel.suggestionMode,
                 markdownRenderEnabled: viewModel.markdownRenderEnabled,
-                horizontalPadding: 46,
+                horizontalPadding: 20,
                 doubleTapNavigationEnabled: viewModel.doubleTapNavigationEnabled,
                 doubleTapDelay: viewModel.doubleTapDelay,
                 currentSearchIndex: viewModel.currentSearchIndex,
@@ -137,7 +137,7 @@ struct DetailEditorView: View {
                         .font(.system(size: viewModel.fontSize, weight: .regular, design: viewModel.fontDesign))
                         .foregroundStyle(viewModel.isDarkMode ? .white.opacity(0.25) : .black.opacity(0.25))
                         .padding(.top, 0)
-                        .padding(.leading, 46 + 8)
+                        .padding(.leading, 20 + 8)
                         .allowsHitTesting(false)
                 }
             }
