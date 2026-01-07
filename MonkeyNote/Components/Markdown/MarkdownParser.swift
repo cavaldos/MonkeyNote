@@ -438,7 +438,7 @@ extension MarkdownParser {
         case .inlineCode:
             let codeFont = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize * 0.85, weight: .medium)
             attributes[.font] = codeFont
-            // Use custom key for rounded background (handled by ThickCursorLayoutManager)
+            // Use custom key for rounded background (handled by CursorLayoutManager)
             let roundedBackgroundKey = NSAttributedString.Key("roundedBackgroundColor")
             attributes[roundedBackgroundKey] = NSColor(red: 0.2, green: 0.2, blue: 0.22, alpha: 1.0) // Dark background
             attributes[.foregroundColor] = NSColor(red: 0.95, green: 0.45, blue: 0.45, alpha: 1.0) // Coral/red color
