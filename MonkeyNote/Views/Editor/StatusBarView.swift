@@ -18,7 +18,7 @@ struct StatusBarView: View {
             Text("|")
             Image(systemName: "text.alignleft")
                 .font(.system(size: 12, weight: .regular))
-            Text("\(viewModel.lineCount) lines")
+            Text("\(viewModel.cursorLine)/\(viewModel.lineCount)")
             Text("|")
             Image(systemName: "character.cursor.ibeam")
                 .font(.system(size: 12, weight: .regular))

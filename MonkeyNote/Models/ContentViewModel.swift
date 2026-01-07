@@ -39,6 +39,9 @@ final class ContentViewModel {
     var currentSearchIndex: Int = 0
     var isSearchComplete: Bool = true
     
+    // MARK: - Cursor State
+    var cursorLine: Int = 1
+
     // MARK: - UI State
     var showSettings: Bool = false
     var showTrash: Bool = false

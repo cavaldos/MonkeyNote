@@ -129,6 +129,9 @@ struct DetailEditorView: View {
                 currentSearchIndex: viewModel.currentSearchIndex,
                 onSearchMatchesChanged: { count, isComplete in
                     viewModel.updateSearchMatches(count: count, isComplete: isComplete)
+                },
+                onCursorLineChanged: { line in
+                    viewModel.cursorLine = line
                 }
             )
             .overlay(alignment: .topLeading) {

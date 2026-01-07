@@ -56,6 +56,7 @@ struct NotesListView: View {
         }
         .clipped()
         .navigationTitle(viewModel.selectedFolderID == nil ? "Notes" : (viewModel.selectedFolder?.name ?? "Notes"))
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 8) {
@@ -162,6 +163,7 @@ struct NotesListView: View {
         } label: {
             Image(systemName: "arrow.up.arrow.down")
         }
+        .menuIndicator(.hidden)
         .help("Sort notes")
     }
 }

@@ -425,6 +425,10 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     var onSearchMatchesChanged: ((Int, Bool) -> Void)? = nil  // Reports (count, isComplete)
     var onNavigateToMatch: ((Int) -> Void)? = nil  // Called when should navigate to specific match
 
+    // Cursor position callback
+    var onCursorLineChanged: ((Int) -> Void)? = nil
+
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
@@ -658,6 +662,12 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             if let textStorage = textView.textStorage as? MarkdownTextStorage {
                 textStorage.cursorPosition = textView.selectedRange().location
             }
+            // Calculate and report cursor line
+            let text = textView.string
+            let cursorPosition = textView.selectedRange().location
+            let textUpToCursor = String(text.prefix(cursorPosition))
+            let cursorLine = textUpToCursor.components(separatedBy: .newlines).count
+            parent.onCursorLineChanged?(cursorLine)
         }
     }
 }
