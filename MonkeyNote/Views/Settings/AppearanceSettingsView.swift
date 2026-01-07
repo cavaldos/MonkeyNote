@@ -7,6 +7,52 @@
 
 import SwiftUI
 
+// MARK: - Vibrancy Material Type
+enum VibrancyMaterialType: String, CaseIterable {
+    case hudWindow = "hudWindow"
+    case popover = "popover"
+    case sidebar = "sidebar"
+    case underWindowBackground = "underWindowBackground"
+    case headerView = "headerView"
+    case sheet = "sheet"
+    case windowBackground = "windowBackground"
+    case menu = "menu"
+    case contentBackground = "contentBackground"
+    case titlebar = "titlebar"
+    
+    var displayName: String {
+        switch self {
+        case .hudWindow: return "HUD Window"
+        case .popover: return "Popover"
+        case .sidebar: return "Sidebar"
+        case .underWindowBackground: return "Under Window"
+        case .headerView: return "Header View"
+        case .sheet: return "Sheet"
+        case .windowBackground: return "Window Background"
+        case .menu: return "Menu"
+        case .contentBackground: return "Content"
+        case .titlebar: return "Titlebar"
+        }
+    }
+    
+    #if os(macOS)
+    var material: NSVisualEffectView.Material {
+        switch self {
+        case .hudWindow: return .hudWindow
+        case .popover: return .popover
+        case .sidebar: return .sidebar
+        case .underWindowBackground: return .underWindowBackground
+        case .headerView: return .headerView
+        case .sheet: return .sheet
+        case .windowBackground: return .windowBackground
+        case .menu: return .menu
+        case .contentBackground: return .contentBackground
+        case .titlebar: return .titlebar
+        }
+    }
+    #endif
+}
+
 struct AppearanceSettingsView: View {
     @State private var showFontPreviewer: Bool = false
     @AppStorage("note.isDarkMode") private var isDarkMode: Bool = true
@@ -16,6 +62,8 @@ struct AppearanceSettingsView: View {
     @AppStorage("note.cursorBlinkEnabled") private var cursorBlinkEnabled: Bool = true
     @AppStorage("note.cursorAnimationEnabled") private var cursorAnimationEnabled: Bool = true
     @AppStorage("note.cursorAnimationDuration") private var cursorAnimationDuration: Double = 0.15
+    @AppStorage("note.vibrancyEnabled") private var vibrancyEnabled: Bool = true
+    @AppStorage("note.vibrancyMaterial") private var vibrancyMaterial: String = "hudWindow"
 
     private let defaultFonts = ["monospaced", "rounded", "serif"]
 
@@ -110,6 +158,34 @@ struct AppearanceSettingsView: View {
                     }
                 }
             }
+            
+            #if os(macOS)
+            SettingsSection("Background Vibrancy") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Enable Vibrancy Effect", isOn: $vibrancyEnabled)
+                        .onChange(of: vibrancyEnabled) { _, _ in
+                            NotificationCenter.default.post(name: .vibrancySettingChanged, object: nil)
+                        }
+                    
+                    if vibrancyEnabled {
+                        Picker("Blur Style", selection: $vibrancyMaterial) {
+                            ForEach(VibrancyMaterialType.allCases, id: \.rawValue) { type in
+                                Text(type.displayName).tag(type.rawValue)
+                            }
+                        }
+                        .frame(maxWidth: 200)
+                        .onChange(of: vibrancyMaterial) { _, _ in
+                            NotificationCenter.default.post(name: .vibrancySettingChanged, object: nil)
+                        }
+                        
+                        Text("Vibrancy creates a frosted glass effect, allowing the desktop wallpaper to show through the window.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            #endif
 
             Spacer()
         }

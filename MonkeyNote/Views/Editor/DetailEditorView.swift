@@ -16,8 +16,6 @@ struct DetailEditorView: View {
         
         ZStack {
             background
-            (viewModel.isDarkMode ? Color.black.opacity(0.16) : Color.black.opacity(0.04))
-                .ignoresSafeArea()
             
             // Show editor if we have a selected note OR an external file
             if viewModel.selectedNoteIndex == nil && !viewModel.isEditingExternalFile {
@@ -53,14 +51,54 @@ struct DetailEditorView: View {
     
     private var background: some View {
         Group {
+            #if os(macOS)
+            if viewModel.vibrancyEnabled {
+                // Transparent background when vibrancy is enabled
+                Color.clear
+                    .background(
+                        VisualEffectBlur(
+                            material: vibrancyMaterial,
+                            blendingMode: .behindWindow,
+                            state: .active
+                        )
+                    )
+            } else {
+                solidBackground
+            }
+            #else
+            solidBackground
+            #endif
+        }
+        .ignoresSafeArea()
+    }
+    
+    private var solidBackground: some View {
+        Group {
             if viewModel.isDarkMode {
                 Color(red: 49.0 / 255.0, green: 49.0 / 255.0, blue: 49.0 / 255.0)
             } else {
                 Color(red: 0.97, green: 0.97, blue: 0.97)
             }
         }
-        .ignoresSafeArea()
     }
+    
+    #if os(macOS)
+    private var vibrancyMaterial: NSVisualEffectView.Material {
+        switch viewModel.vibrancyMaterial {
+        case "hudWindow": return .hudWindow
+        case "popover": return .popover
+        case "sidebar": return .sidebar
+        case "underWindowBackground": return .underWindowBackground
+        case "headerView": return .headerView
+        case "sheet": return .sheet
+        case "windowBackground": return .windowBackground
+        case "menu": return .menu
+        case "contentBackground": return .contentBackground
+        case "titlebar": return .titlebar
+        default: return .hudWindow
+        }
+    }
+    #endif
     
     // MARK: - Empty State
     

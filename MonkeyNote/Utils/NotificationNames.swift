@@ -10,4 +10,5 @@ import Foundation
 extension Notification.Name {
     static let focusSearch = Notification.Name("focusSearch")
     static let focusEditor = Notification.Name("focusEditor")
+    static let vibrancySettingChanged = Notification.Name("vibrancySettingChanged")
 }

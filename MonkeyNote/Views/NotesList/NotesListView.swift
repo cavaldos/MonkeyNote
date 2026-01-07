@@ -13,6 +13,7 @@ struct NotesListView: View {
     // Local state
     @State private var showLargeFileAlert: Bool = false
     @State private var largeFileInfo: (name: String, lines: Int)?
+    @State private var isVibrancyEnabled: Bool = UserDefaults.standard.object(forKey: "note.vibrancyEnabled") as? Bool ?? true
     
     var body: some View {
         @Bindable var vm = viewModel
@@ -56,7 +57,10 @@ struct NotesListView: View {
         }
         .clipped()
         .navigationTitle(viewModel.selectedFolderID == nil ? "Notes" : (viewModel.selectedFolder?.name ?? "Notes"))
-        .toolbarBackground(.hidden, for: .windowToolbar)
+        #if os(macOS)
+        .toolbarBackground(isVibrancyEnabled ? .visible : .hidden, for: .windowToolbar)
+        .toolbarBackground(Material.ultraThinMaterial, for: .windowToolbar)
+        #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 8) {
@@ -80,11 +84,38 @@ struct NotesListView: View {
                 Text("\"\(info.name)\" has \(info.lines) lines.\nMaximum allowed: \(VaultManager.maxAllowedLines) lines.")
             }
         }
+        #if os(macOS)
+        .onReceive(NotificationCenter.default.publisher(for: .vibrancySettingChanged)) { _ in
+            isVibrancyEnabled = UserDefaults.standard.object(forKey: "note.vibrancyEnabled") as? Bool ?? true
+        }
+        #endif
     }
     
     // MARK: - Background
     
     private var background: some View {
+        Group {
+            #if os(macOS)
+            if viewModel.vibrancyEnabled {
+                Color.clear
+                    .background(
+                        VisualEffectBlur(
+                            material: vibrancyMaterial,
+                            blendingMode: .behindWindow,
+                            state: .active
+                        )
+                    )
+            } else {
+                solidBackground
+            }
+            #else
+            solidBackground
+            #endif
+        }
+        .ignoresSafeArea()
+    }
+    
+    private var solidBackground: some View {
         Group {
             if viewModel.isDarkMode {
                 Color(red: 49.0 / 255.0, green: 49.0 / 255.0, blue: 49.0 / 255.0)
@@ -92,8 +123,25 @@ struct NotesListView: View {
                 Color(red: 0.97, green: 0.97, blue: 0.97)
             }
         }
-        .ignoresSafeArea()
     }
+    
+    #if os(macOS)
+    private var vibrancyMaterial: NSVisualEffectView.Material {
+        switch viewModel.vibrancyMaterial {
+        case "hudWindow": return .hudWindow
+        case "popover": return .popover
+        case "sidebar": return .sidebar
+        case "underWindowBackground": return .underWindowBackground
+        case "headerView": return .headerView
+        case "sheet": return .sheet
+        case "windowBackground": return .windowBackground
+        case "menu": return .menu
+        case "contentBackground": return .contentBackground
+        case "titlebar": return .titlebar
+        default: return .hudWindow
+        }
+    }
+    #endif
     
     // MARK: - Sort Menu
     

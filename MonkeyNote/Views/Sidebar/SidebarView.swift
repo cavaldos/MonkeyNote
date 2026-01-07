@@ -112,21 +112,44 @@ struct SidebarView: View {
     // MARK: - Background
     
     private var sidebarBackground: some View {
-        #if os(macOS)
-        VisualEffectBlur(material: .sidebar, blendingMode: .behindWindow)
-            .overlay(
-                (viewModel.isDarkMode ? Color.black.opacity(0.10) : Color.white.opacity(0.10))
-            )
-            .ignoresSafeArea()
-        #else
         Group {
-            if viewModel.isDarkMode {
-                Color(red: 49.0 / 255.0, green: 49.0 / 255.0, blue: 49.0 / 255.0)
+            #if os(macOS)
+            if viewModel.vibrancyEnabled {
+                VisualEffectBlur(material: vibrancyMaterial, blendingMode: .behindWindow, state: .active)
             } else {
-                Color(red: 0.97, green: 0.97, blue: 0.97)
+                VisualEffectBlur(material: .sidebar, blendingMode: .behindWindow)
+                    .overlay(
+                        (viewModel.isDarkMode ? Color.black.opacity(0.10) : Color.white.opacity(0.10))
+                    )
             }
+            #else
+            Group {
+                if viewModel.isDarkMode {
+                    Color(red: 49.0 / 255.0, green: 49.0 / 255.0, blue: 49.0 / 255.0)
+                } else {
+                    Color(red: 0.97, green: 0.97, blue: 0.97)
+                }
+            }
+            #endif
         }
         .ignoresSafeArea()
-        #endif
     }
+    
+    #if os(macOS)
+    private var vibrancyMaterial: NSVisualEffectView.Material {
+        switch viewModel.vibrancyMaterial {
+        case "hudWindow": return .hudWindow
+        case "popover": return .popover
+        case "sidebar": return .sidebar
+        case "underWindowBackground": return .underWindowBackground
+        case "headerView": return .headerView
+        case "sheet": return .sheet
+        case "windowBackground": return .windowBackground
+        case "menu": return .menu
+        case "contentBackground": return .contentBackground
+        case "titlebar": return .titlebar
+        default: return .sidebar
+        }
+    }
+    #endif
 }

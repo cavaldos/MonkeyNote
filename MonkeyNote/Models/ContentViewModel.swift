@@ -132,6 +132,16 @@ final class ContentViewModel {
         set { UserDefaults.standard.set(newValue, forKey: "note.doubleTapDelay") }
     }
     
+    var vibrancyEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "note.vibrancyEnabled") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "note.vibrancyEnabled") }
+    }
+    
+    var vibrancyMaterial: String {
+        get { UserDefaults.standard.string(forKey: "note.vibrancyMaterial") ?? "hudWindow" }
+        set { UserDefaults.standard.set(newValue, forKey: "note.vibrancyMaterial") }
+    }
+    
     // MARK: - Computed Properties
     
     var sortOption: NoteSortOption {
