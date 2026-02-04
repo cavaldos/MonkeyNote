@@ -169,7 +169,7 @@ struct AutocompleteSettingsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Suggestion Delay: \(Int(autocompleteDelay * 1000))ms")
                             .font(.subheadline)
-                        Slider(value: $autocompleteDelay, in: 0...0.5, step: 0.05)
+                        Slider(value: $autocompleteDelay, in: 0...3.0, step: 0.2)
                             .frame(maxWidth: 250)
                         Text("How long to wait before showing suggestions")
                             .font(.caption)
