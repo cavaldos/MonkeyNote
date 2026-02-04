@@ -203,12 +203,16 @@ struct SelectionToolbarView: View {
                 }
             }
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color(nsColor: NSColor(red: 0.25, green: 0.25, blue: 0.27, alpha: 0.98))) //corlor background selection toolbar
-                .shadow(color: .black.opacity(0.4), radius: 12, x: 0, y: 4)
+            VisualEffectBlur(material: .popover, blendingMode: .withinWindow)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
         )
     }
 }
