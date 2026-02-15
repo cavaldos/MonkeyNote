@@ -8,24 +8,36 @@
 #if os(macOS)
 import SwiftUI
 import AppKit
+import AVFoundation
+import NaturalLanguage
+import CoreServices.DictionaryServices
 
 // MARK: - Dictionary Lookup Menu (triggered by typing "word\")
 
-class DictionaryLookupWindowController: NSObject {
+class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
     private var window: NSPanel?
     private var backgroundView: NSView?
     private var scrollView: NSScrollView?
     private var textView: NSTextView?
+    private var speakButton: NSButton?
     private var onDismiss: (() -> Void)?
     
     private var currentWord: String = ""
     private weak var parentWindow: NSWindow?
     private var menuOriginPoint: NSPoint = .zero
+    private let speechSynthesizer = AVSpeechSynthesizer()
+    private var isSpeakingWord: Bool = false
     
     private let menuWidth: CGFloat = 380
     private let menuMinHeight: CGFloat = 120
     private let menuMaxHeight: CGFloat = 400
     private let padding: CGFloat = 16
+    private let speakButtonSize: CGFloat = 24
+    
+    override init() {
+        super.init()
+        speechSynthesizer.delegate = self
+    }
     
     func show(at point: NSPoint, in parentWindow: NSWindow?, word: String, onDismiss: @escaping () -> Void) {
         self.onDismiss = onDismiss
@@ -37,6 +49,8 @@ class DictionaryLookupWindowController: NSObject {
     }
     
     private func createWindow(word: String) {
+        stopSpeakingWord()
+
         // Remove existing window if any
         if let existingWindow = window {
             existingWindow.parent?.removeChildWindow(existingWindow)
@@ -44,7 +58,7 @@ class DictionaryLookupWindowController: NSObject {
         }
         
         // Get definition
-        let definition = DictionaryService.shared.getDefinition(for: word)
+        let definition = getDefinition(for: word)
         
         // Build attributed content
         let attributedContent = buildAttributedContent(word: word, definition: definition)
@@ -93,12 +107,121 @@ class DictionaryLookupWindowController: NSObject {
         
         // Setup scroll view with text
         setupScrollView(in: bgView, attributedContent: attributedContent, menuHeight: menuHeight)
+        setupSpeakButton(in: bgView, menuHeight: menuHeight)
         
         panel.contentView = bgView
         self.window = panel
         
         parentWindow?.addChildWindow(panel, ordered: NSWindow.OrderingMode.above)
         panel.makeKeyAndOrderFront(self)
+    }
+
+    private func getDefinition(for word: String) -> String? {
+        let trimmedWord = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedWord.isEmpty else { return nil }
+
+        let nsString = trimmedWord as NSString
+        let range = CFRange(location: 0, length: nsString.length)
+        guard let definition = DCSCopyTextDefinition(nil, nsString, range) else {
+            return nil
+        }
+
+        return definition.takeRetainedValue() as String
+    }
+
+    private func setupSpeakButton(in container: NSView, menuHeight: CGFloat) {
+        let button = NSButton(frame: NSRect(
+            x: menuWidth - padding - speakButtonSize,
+            y: menuHeight - padding - speakButtonSize,
+            width: speakButtonSize,
+            height: speakButtonSize
+        ))
+        button.isBordered = false
+        button.bezelStyle = .regularSquare
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 6
+        button.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.08).cgColor
+        button.contentTintColor = NSColor.white.withAlphaComponent(0.9)
+        button.target = self
+        button.action = #selector(toggleSpeakWord)
+        button.toolTip = "Phat am"
+        
+        speakButton = button
+        container.addSubview(button)
+        updateSpeakButtonAppearance()
+    }
+
+    private func updateSpeakButtonAppearance() {
+        guard let button = speakButton else { return }
+        let symbolName = isSpeakingWord ? "stop.fill" : "speaker.wave.2.fill"
+        button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
+    }
+
+    @objc private func toggleSpeakWord() {
+        if isSpeakingWord {
+            stopSpeakingWord()
+            return
+        }
+
+        guard !currentWord.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        let utterance = AVSpeechUtterance(string: currentWord)
+        let languageCode = preferredSpeechLanguageCode(for: currentWord)
+        utterance.voice = bestVoice(for: languageCode)
+        speechSynthesizer.speak(utterance)
+        isSpeakingWord = true
+        updateSpeakButtonAppearance()
+    }
+
+    private func stopSpeakingWord() {
+        if speechSynthesizer.isSpeaking {
+            speechSynthesizer.stopSpeaking(at: .immediate)
+        }
+        isSpeakingWord = false
+        updateSpeakButtonAppearance()
+    }
+
+    private func bestVoice(for languageCode: String) -> AVSpeechSynthesisVoice? {
+        let normalizedCode = normalizeLanguageCode(languageCode)
+
+        if let exact = AVSpeechSynthesisVoice.speechVoices().first(where: {
+            $0.language.lowercased().hasPrefix(normalizedCode.lowercased())
+        }) {
+            return exact
+        }
+
+        return AVSpeechSynthesisVoice(language: "en-US")
+    }
+
+    private func preferredSpeechLanguageCode(for word: String) -> String {
+        let fallback = UserDefaults.standard.string(forKey: "note.dictionaryLanguage") ?? "en"
+        let cleanedWord = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedWord.isEmpty else { return fallback }
+
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(cleanedWord)
+
+        guard
+            let detectedLanguage = recognizer.dominantLanguage,
+            let confidence = recognizer.languageHypotheses(withMaximum: 1)[detectedLanguage],
+            confidence >= 0.55
+        else {
+            return fallback
+        }
+
+        return detectedLanguage.rawValue
+    }
+
+    private func normalizeLanguageCode(_ languageCode: String) -> String {
+        if languageCode == "zh-Hans" { return "zh" }
+        if languageCode == "zh-Hant" { return "zh" }
+        if let separatorIndex = languageCode.firstIndex(of: "_") {
+            return String(languageCode[..<separatorIndex])
+        }
+        if let separatorIndex = languageCode.firstIndex(of: "-") {
+            return String(languageCode[..<separatorIndex])
+        }
+        return languageCode
     }
     
     private func setupScrollView(in container: NSView, attributedContent: NSAttributedString, menuHeight: CGFloat) {
@@ -409,6 +532,7 @@ class DictionaryLookupWindowController: NSObject {
     }
     
     func dismiss() {
+        stopSpeakingWord()
         if let window = self.window {
             window.parent?.removeChildWindow(window)
             window.orderOut(nil)
@@ -417,7 +541,18 @@ class DictionaryLookupWindowController: NSObject {
         self.backgroundView = nil
         self.scrollView = nil
         self.textView = nil
+        self.speakButton = nil
         onDismiss?()
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        isSpeakingWord = false
+        updateSpeakButtonAppearance()
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        isSpeakingWord = false
+        updateSpeakButtonAppearance()
     }
     
     var isVisible: Bool {

@@ -68,7 +68,7 @@ class MarkdownTextStorage: NSTextStorage {
     
     // MARK: - Viewport-based Rendering (for large documents)
     // Threshold for switching to viewport-based mode (characters)
-    private let largeDocumentThreshold: Int = 30_000
+    private let largeDocumentThreshold: Int = 10_000
     
     // Current visible range (updated by text view)
     private var visibleRange: NSRange = NSRange(location: 0, length: 0)
@@ -76,8 +76,8 @@ class MarkdownTextStorage: NSTextStorage {
     // Extended range with buffer for smooth scrolling
     private var extendedRange: NSRange = NSRange(location: 0, length: 0)
     
-    // Buffer size above/below visible area (characters, ~100-150 lines)
-    private let viewportBuffer: Int = 5000
+    // Buffer size above/below visible area (lines)
+    private let viewportBufferLines: Int = 200
     
     // Minimum change threshold before re-parsing (characters)
     private let viewportChangeThreshold: Int = 1000
@@ -175,8 +175,15 @@ class MarkdownTextStorage: NSTextStorage {
         
         pendingEditedRange = nil
         
-        let fullRange = NSRange(location: 0, length: backingStore.length)
-        edited(.editedAttributes, range: fullRange, changeInLength: 0)
+        let updateRange: NSRange
+        if isViewportMode, extendedRange.length > 0 {
+            updateRange = extendedRange
+        } else {
+            updateRange = NSRange(location: 0, length: backingStore.length)
+        }
+        if updateRange.length > 0 {
+            edited(.editedAttributes, range: updateRange, changeInLength: 0)
+        }
         
         endEditing()
         
@@ -599,8 +606,15 @@ class MarkdownTextStorage: NSTextStorage {
             applyFullMarkdownStyling()
         }
         
-        let fullRange = NSRange(location: 0, length: backingStore.length)
-        edited(.editedAttributes, range: fullRange, changeInLength: 0)
+        let updateRange: NSRange
+        if isViewportMode, extendedRange.length > 0 {
+            updateRange = extendedRange
+        } else {
+            updateRange = NSRange(location: 0, length: backingStore.length)
+        }
+        if updateRange.length > 0 {
+            edited(.editedAttributes, range: updateRange, changeInLength: 0)
+        }
         
         endEditing()
         
@@ -617,9 +631,32 @@ class MarkdownTextStorage: NSTextStorage {
         // For small documents, use full parsing (faster for small docs)
         guard isViewportMode else { return }
         
-        // Calculate extended range with buffer above and below
-        let extendedStart = max(0, newVisibleRange.location - viewportBuffer)
-        let extendedEnd = min(backingStore.length, newVisibleRange.location + newVisibleRange.length + viewportBuffer)
+        let text = backingStore.string as NSString
+        let visibleLineRange = text.lineRange(for: newVisibleRange)
+        guard visibleLineRange.length > 0 else { return }
+        
+        // Calculate extended range with buffer above and below (by lines)
+        var extendedStart = visibleLineRange.location
+        var linesAbove = 0
+        while linesAbove < viewportBufferLines && extendedStart > 0 {
+            let prevLocation = max(0, extendedStart - 1)
+            let prevLineRange = text.lineRange(for: NSRange(location: prevLocation, length: 0))
+            if prevLineRange.location == extendedStart { break }
+            extendedStart = prevLineRange.location
+            linesAbove += 1
+        }
+        
+        var extendedEnd = visibleLineRange.location + visibleLineRange.length
+        var linesBelow = 0
+        while linesBelow < viewportBufferLines && extendedEnd < backingStore.length {
+            let nextLocation = min(extendedEnd, max(0, backingStore.length - 1))
+            let nextLineRange = text.lineRange(for: NSRange(location: nextLocation, length: 0))
+            let nextEnd = nextLineRange.location + nextLineRange.length
+            if nextEnd == extendedEnd { break }
+            extendedEnd = nextEnd
+            linesBelow += 1
+        }
+        
         let newExtendedRange = NSRange(location: extendedStart, length: extendedEnd - extendedStart)
         
         // Skip if range hasn't changed significantly (avoid excessive re-parsing)
