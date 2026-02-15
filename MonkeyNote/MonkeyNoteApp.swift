@@ -65,12 +65,20 @@ class VibrancyWindowConfigurator: ObservableObject {
     
     @Published var isVibrancyEnabled: Bool = UserDefaults.standard.object(forKey: "note.vibrancyEnabled") as? Bool ?? true
     @Published var materialType: String = UserDefaults.standard.string(forKey: "note.vibrancyMaterial") ?? "hudWindow"
+    @Published var isWindowPinned: Bool = UserDefaults.standard.object(forKey: "note.windowAlwaysOnTop") as? Bool ?? false
     
     init() {
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(vibrancySettingDidChange),
             name: .vibrancySettingChanged,
+            object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowPinSettingDidChange),
+            name: .windowPinSettingChanged,
             object: nil
         )
     }
@@ -87,15 +95,28 @@ class VibrancyWindowConfigurator: ObservableObject {
             configureWindow(window)
         }
     }
+
+    @objc private func windowPinSettingDidChange() {
+        isWindowPinned = UserDefaults.standard.object(forKey: "note.windowAlwaysOnTop") as? Bool ?? false
+
+        if let window = window {
+            applyWindowLevel(on: window)
+        }
+    }
     
     func configureWindow(_ window: NSWindow) {
         self.window = window
+        applyWindowLevel(on: window)
         
         if isVibrancyEnabled {
             enableVibrancy(on: window)
         } else {
             disableVibrancy(on: window)
         }
+    }
+
+    private func applyWindowLevel(on window: NSWindow) {
+        window.level = isWindowPinned ? .floating : .normal
     }
     
     private func enableVibrancy(on window: NSWindow) {

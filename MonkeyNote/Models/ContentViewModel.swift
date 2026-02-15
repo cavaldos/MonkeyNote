@@ -112,9 +112,10 @@ final class ContentViewModel {
         set { UserDefaults.standard.set(newValue, forKey: "note.suggestionMode") }
     }
     
-    var markdownRenderEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: "note.markdownRenderEnabled") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "note.markdownRenderEnabled") }
+    var markdownRenderEnabled: Bool = UserDefaults.standard.object(forKey: "note.markdownRenderEnabled") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(markdownRenderEnabled, forKey: "note.markdownRenderEnabled")
+        }
     }
     
     var sortOptionRaw: String {
@@ -140,6 +141,12 @@ final class ContentViewModel {
     var vibrancyMaterial: String {
         get { UserDefaults.standard.string(forKey: "note.vibrancyMaterial") ?? "hudWindow" }
         set { UserDefaults.standard.set(newValue, forKey: "note.vibrancyMaterial") }
+    }
+
+    var windowAlwaysOnTop: Bool = UserDefaults.standard.object(forKey: "note.windowAlwaysOnTop") as? Bool ?? false {
+        didSet {
+            UserDefaults.standard.set(windowAlwaysOnTop, forKey: "note.windowAlwaysOnTop")
+        }
     }
     
     // MARK: - Computed Properties

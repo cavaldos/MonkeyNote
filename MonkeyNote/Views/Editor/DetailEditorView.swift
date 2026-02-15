@@ -209,6 +209,19 @@ struct DetailEditorView: View {
     @ViewBuilder
     private var toolbarContent: some View {
         @Bindable var vm = viewModel
+
+        #if os(macOS)
+        ThemeIconButton(
+            systemImage: viewModel.windowAlwaysOnTop ? "pin.fill" : "pin",
+            isSelected: viewModel.windowAlwaysOnTop,
+            action: {
+                vm.windowAlwaysOnTop.toggle()
+                NotificationCenter.default.post(name: .windowPinSettingChanged, object: nil)
+            },
+            tooltip: viewModel.windowAlwaysOnTop ? "Always on Top: ON (click to disable)" : "Always on Top: OFF (click to enable)",
+            highlightSelectionChrome: false
+        )
+        #endif
         
         // Pomodoro timer
         PomodoroTimerView()
@@ -218,7 +231,8 @@ struct DetailEditorView: View {
             systemImage: viewModel.markdownRenderEnabled ? "text.badge.checkmark" : "text.badge.xmark",
             isSelected: viewModel.markdownRenderEnabled,
             action: { vm.markdownRenderEnabled.toggle() },
-            tooltip: viewModel.markdownRenderEnabled ? "Markdown: ON (click to disable)" : "Markdown: OFF (click to enable)"
+            tooltip: viewModel.markdownRenderEnabled ? "Markdown: ON (click to disable)" : "Markdown: OFF (click to enable)",
+            highlightSelectionChrome: false
         )
         
         ThemeIconButton(
