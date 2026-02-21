@@ -27,6 +27,8 @@ struct ContentView: View {
             viewModel.loadFromVault()
             viewModel.ensureInitialSelection()
             viewModel.refreshTrash()
+            viewModel.startWatchingVault()
+            viewModel.startWatchingCurrentFile()
         }
         .sheet(item: $viewModel.renameRequest) { request in
             RenameSheet(
@@ -65,10 +67,19 @@ struct ContentView: View {
             viewModel.loadFromVault()
             viewModel.ensureInitialSelection()
             viewModel.refreshTrash()
+            viewModel.startWatchingVault()
+            viewModel.startWatchingCurrentFile()
             
             print("📂 Switched to vault: \(newURL?.path ?? "none")")
         }
+        .onChange(of: viewModel.selectedNoteID) { _, _ in
+            viewModel.startWatchingCurrentFile()
+        }
+        .onChange(of: viewModel.externalFileURL) { _, _ in
+            viewModel.startWatchingCurrentFile()
+        }
         .onDisappear {
+            viewModel.stopWatching()
             guard !viewModel.isChangingVault else {
                 print("⏭️ Skipping save - vault is changing")
                 return

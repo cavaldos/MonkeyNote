@@ -463,6 +463,26 @@ class VaultManager: ObservableObject {
         return notes.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
     
+    // MARK: - File URL Resolution
+    
+    /// Get the file URL for a note given its title and folder path.
+    func noteFileURL(noteTitle: String, folderPath: [String]) -> URL? {
+        guard let vaultURL = vaultURL else { return nil }
+        var url = vaultURL
+        for folderName in folderPath {
+            url = url.appendingPathComponent(sanitizeFileName(folderName))
+        }
+        url = url.appendingPathComponent(sanitizeFileName(noteTitle) + ".md")
+        return url
+    }
+    
+    /// Reload a single note's content from its .md file on disk.
+    func reloadNoteContent(noteTitle: String, folderPath: [String]) -> String? {
+        guard let fileURL = noteFileURL(noteTitle: noteTitle, folderPath: folderPath),
+              FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+        return try? String(contentsOf: fileURL, encoding: .utf8)
+    }
+    
     // MARK: - Single Note Operations
     
     /// Save a single note (used for debounced saves)

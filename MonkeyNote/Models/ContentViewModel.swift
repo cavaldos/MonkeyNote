@@ -22,6 +22,9 @@ final class ContentViewModel {
     // MARK: - Vault Manager
     var vaultManager = VaultManager()
     
+    // MARK: - File Watcher
+    let fileWatcher = FileWatcherService()
+    
     // MARK: - Data State
     var folders: [NoteFolder] = []
     var trashItems: [TrashItem] = []
@@ -262,6 +265,8 @@ final class ContentViewModel {
         if UserDefaults.standard.object(forKey: "note.isDarkMode") == nil {
             UserDefaults.standard.set(true, forKey: "note.isDarkMode")
         }
+        
+        setupFileWatcher()
     }
     
     // MARK: - Data Loading
@@ -272,11 +277,87 @@ final class ContentViewModel {
     }
     
     func saveAllToDisk() {
+        fileWatcher.notifyWillSave()
         folders = vaultManager.saveFolders(folders)
+        fileWatcher.notifyDidSave()
+        fileWatcher.updateVaultSnapshot()
     }
     
     func refreshTrash() {
         trashItems = vaultManager.scanTrash(currentFolders: folders)
+    }
+    
+    // MARK: - File Watcher
+    
+    private func setupFileWatcher() {
+        fileWatcher.onFileContentChanged = { [weak self] newContent in
+            guard let self else { return }
+            
+            if self.isEditingExternalFile {
+                // External file changed on disk
+                guard newContent != self.externalFileText else { return }
+                self.externalFileText = newContent
+                print("🔄 External file reloaded from disk")
+            } else {
+                // Vault note changed on disk
+                guard let note = self.selectedNote, newContent != note.text else { return }
+                self.updateSelectedNoteText(newContent)
+                print("🔄 Note reloaded from disk")
+            }
+        }
+        
+        fileWatcher.onVaultStructureChanged = { [weak self] in
+            guard let self else { return }
+            let currentNoteID = self.selectedNoteID
+            let currentFolderID = self.selectedFolderID
+            
+            self.folders = self.vaultManager.loadFolders()
+            
+            // Restore selection
+            self.selectedFolderID = currentFolderID
+            self.selectedNoteID = currentNoteID
+            self.refreshTrash()
+            print("🔄 Vault structure reloaded from disk")
+        }
+    }
+    
+    /// Start watching the currently selected note or external file.
+    func startWatchingCurrentFile() {
+        if let url = externalFileURL {
+            fileWatcher.watchFile(at: url)
+        } else if let fileURL = currentNoteFileURL {
+            fileWatcher.watchFile(at: fileURL)
+        } else {
+            fileWatcher.stopWatchingFile()
+        }
+    }
+    
+    /// Start watching the vault directory for structural changes.
+    func startWatchingVault() {
+        guard let vaultURL = vaultManager.vaultURL else { return }
+        fileWatcher.watchVault(at: vaultURL)
+    }
+    
+    /// Stop all file watching.
+    func stopWatching() {
+        fileWatcher.stopAll()
+    }
+    
+    /// Update the selected note's text without triggering a save (used for external changes).
+    private func updateSelectedNoteText(_ newContent: String) {
+        guard let selectedFolderID, let selectedNoteID else { return }
+        updateFolder(folderID: selectedFolderID) { folder in
+            guard let noteIndex = folder.notes.firstIndex(where: { $0.id == selectedNoteID }) else { return }
+            folder.notes[noteIndex].text = newContent
+        }
+    }
+    
+    /// Get the file URL for the currently selected note.
+    private var currentNoteFileURL: URL? {
+        guard let note = selectedNote,
+              let folderID = selectedFolderID,
+              let path = vaultManager.getFolderPath(folderID: folderID, in: folders) else { return nil }
+        return vaultManager.noteFileURL(noteTitle: note.title, folderPath: path)
     }
     
     func ensureInitialSelection() {
@@ -306,12 +387,14 @@ final class ContentViewModel {
     
     func saveExternalFile() {
         guard let url = externalFileURL else { return }
+        fileWatcher.notifyWillSave()
         do {
             try externalFileText.write(to: url, atomically: true, encoding: .utf8)
             print("💾 Saved external file: \(url.path)")
         } catch {
             print("❌ Failed to save external file: \(error)")
         }
+        fileWatcher.notifyDidSave()
     }
     
     func openExternalFile(url: URL) {
