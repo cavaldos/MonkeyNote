@@ -123,6 +123,12 @@ extension CursorTextView {
         let currentLine = text.substring(with: lineRange)
         let trimmedLine = currentLine.trimmingCharacters(in: .whitespaces)
         
+        // Check if we're in a todo list
+        if trimmedLine.hasPrefix("- [ ] ") || trimmedLine.hasPrefix("- [x] ") || trimmedLine.hasPrefix("- [X] ") {
+            super.insertText("\n      ")
+            return true
+        }
+        
         // Check if we're in a numbered list
         if let regex = try? NSRegularExpression(pattern: "^(\\d+)\\.", options: []),
            regex.firstMatch(in: trimmedLine, options: [], range: NSRange(location: 0, length: trimmedLine.utf16.count)) != nil {
@@ -152,6 +158,36 @@ extension CursorTextView {
         let lineRange = text.lineRange(for: selectedRange)
         let currentLine = text.substring(with: lineRange)
         let trimmedLine = currentLine.trimmingCharacters(in: .whitespaces)
+        
+        // Handle todo list (must come before bullet list check)
+        if trimmedLine.hasPrefix("- [ ] ") || trimmedLine.hasPrefix("- [x] ") || trimmedLine.hasPrefix("- [X] ") {
+            let prefixLen = "- [ ] ".count
+            let content = String(trimmedLine.dropFirst(prefixLen)).trimmingCharacters(in: .whitespaces)
+            
+            if content.isEmpty {
+                // Remove the empty todo line
+                let linesBefore = text.substring(with: NSRange(location: 0, length: lineRange.location))
+                let linesAfter = text.substring(with: NSRange(location: lineRange.location + lineRange.length, length: text.length - (lineRange.location + lineRange.length)))
+                let newString = linesBefore + linesAfter
+                self.string = newString
+                self.setSelectedRange(NSRange(location: lineRange.location, length: 0))
+            } else {
+                let nextLineText = "\n- [ ] "
+                super.insertText(nextLineText)
+                self.setSelectedRange(NSRange(location: selectedRange.location + nextLineText.utf16.count, length: 0))
+            }
+            return true
+        }
+        
+        // Handle todo without trailing space (e.g. "- [ ]" or "- [x]")
+        if trimmedLine == "- [ ]" || trimmedLine == "- [x]" || trimmedLine == "- [X]" {
+            let linesBefore = text.substring(with: NSRange(location: 0, length: lineRange.location))
+            let linesAfter = text.substring(with: NSRange(location: lineRange.location + lineRange.length, length: text.length - (lineRange.location + lineRange.length)))
+            let newString = linesBefore + linesAfter
+            self.string = newString
+            self.setSelectedRange(NSRange(location: lineRange.location, length: 0))
+            return true
+        }
         
         // Handle bullet list
         if trimmedLine.hasPrefix("•") {

@@ -26,6 +26,8 @@ enum MarkdownStyle {
     case blockquote     // > quote
     case horizontalRule // ---
     case callout        // > [!note] callout content
+    case todoUnchecked  // - [ ] task
+    case todoChecked    // - [x] task
 }
 
 // MARK: - Markdown Match
@@ -58,6 +60,12 @@ class MarkdownParser {
             // Numbered list - only match the number and dot at start of line (e.g. "1.", "12.")
             // Uses lookahead to ensure space follows but doesn't include it in match
             ("^(\\d+\\.)", .numberedList, 0, 0),
+            
+            // Todo list - unchecked: - [ ] (must come before bullet/dash list)
+            ("^(- \\[ \\])", .todoUnchecked, 0, 0),
+            
+            // Todo list - checked: - [x] or - [X]
+            ("^(- \\[[xX]\\])", .todoChecked, 0, 0),
             
             // Bullet list - match bullet at start of line (only the bullet, not the space)
             ("^(•)", .bulletList, 0, 0),
@@ -105,7 +113,7 @@ class MarkdownParser {
             do {
                 let options: NSRegularExpression.Options
                 switch definition.style {
-                case .heading1, .heading2, .heading3, .numberedList, .bulletList, .blockquote, .horizontalRule, .callout:
+                case .heading1, .heading2, .heading3, .numberedList, .bulletList, .blockquote, .horizontalRule, .callout, .todoUnchecked, .todoChecked:
                     options = [.anchorsMatchLines]
                 default:
                     options = []
@@ -154,7 +162,7 @@ class MarkdownParser {
                 case .heading1, .heading2, .heading3:
                     markdownMatch = parseHeading(match: match, style: style, syntaxLengths: syntaxLengths, in: nsText)
                     
-                case .numberedList, .bulletList:
+                case .numberedList, .bulletList, .todoUnchecked, .todoChecked:
                     markdownMatch = parseListMarker(match: match, style: style, in: nsText)
                     
                 case .horizontalRule:
@@ -511,6 +519,16 @@ extension MarkdownParser {
             // paragraphStyle.paragraphSpacingBefore = 12  // Space above
             // paragraphStyle.paragraphSpacing = 20        // Space below (larger to separate from next line)
             // attributes[.paragraphStyle] = paragraphStyle
+            
+        case .todoUnchecked:
+            attributes[.foregroundColor] = NSColor(red: 0.6, green: 0.6, blue: 0.65, alpha: 1.0)
+            let todoUncheckedKey = NSAttributedString.Key("todoUnchecked")
+            attributes[todoUncheckedKey] = true
+            
+        case .todoChecked:
+            attributes[.foregroundColor] = NSColor(red: 0.4, green: 0.8, blue: 0.4, alpha: 1.0)
+            let todoCheckedKey = NSAttributedString.Key("todoChecked")
+            attributes[todoCheckedKey] = true
         }
         
         return attributes

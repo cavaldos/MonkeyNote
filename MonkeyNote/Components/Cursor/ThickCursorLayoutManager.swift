@@ -21,8 +21,17 @@ class CursorLayoutManager: NSLayoutManager {
     static let calloutKey = NSAttributedString.Key("callout")
     // Custom attribute key for rendering dash as bullet
     static let renderAsBulletKey = NSAttributedString.Key("renderAsBullet")
+    // Custom attribute keys for todo checkboxes
+    static let todoUncheckedKey = NSAttributedString.Key("todoUnchecked")
+    static let todoCheckedKey = NSAttributedString.Key("todoChecked")
     
-    // MARK: - Draw Glyphs (for bullet rendering)
+    // MARK: - Draw Glyphs (for bullet and checkbox rendering)
+    
+    enum CustomGlyphType {
+        case bullet
+        case todoUnchecked
+        case todoChecked
+    }
     
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         guard let textStorage = textStorage else {
@@ -32,41 +41,53 @@ class CursorLayoutManager: NSLayoutManager {
         
         let characterRange = self.characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
         
-        // Find ranges that need bullet rendering
-        var bulletRanges: [(range: NSRange, color: NSColor)] = []
+        // Find ranges that need custom glyph rendering
+        var customRanges: [(range: NSRange, color: NSColor, type: CustomGlyphType)] = []
         
         textStorage.enumerateAttribute(Self.renderAsBulletKey, in: characterRange, options: []) { value, range, _ in
             guard value != nil else { return }
-            
-            // Get the foreground color for this range
             let color = textStorage.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor ?? NSColor(red: 0.7, green: 0.4, blue: 0.9, alpha: 1.0)
-            bulletRanges.append((range, color))
+            customRanges.append((range, color, .bullet))
         }
         
-        // Draw normal glyphs first (excluding bullet ranges)
-        if bulletRanges.isEmpty {
+        textStorage.enumerateAttribute(Self.todoUncheckedKey, in: characterRange, options: []) { value, range, _ in
+            guard value != nil else { return }
+            let color = textStorage.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor ?? NSColor.gray
+            customRanges.append((range, color, .todoUnchecked))
+        }
+        
+        textStorage.enumerateAttribute(Self.todoCheckedKey, in: characterRange, options: []) { value, range, _ in
+            guard value != nil else { return }
+            let color = textStorage.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor ?? NSColor.green
+            customRanges.append((range, color, .todoChecked))
+        }
+        
+        if customRanges.isEmpty {
             super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
         } else {
-            // Draw glyphs in segments, skipping bullet ranges
             var currentLocation = glyphsToShow.location
             let endLocation = glyphsToShow.location + glyphsToShow.length
             
-            for bulletRange in bulletRanges.sorted(by: { $0.range.location < $1.range.location }) {
-                let bulletGlyphRange = self.glyphRange(forCharacterRange: bulletRange.range, actualCharacterRange: nil)
+            for customRange in customRanges.sorted(by: { $0.range.location < $1.range.location }) {
+                let glyphRange = self.glyphRange(forCharacterRange: customRange.range, actualCharacterRange: nil)
                 
-                // Draw glyphs before this bullet range
-                if currentLocation < bulletGlyphRange.location {
-                    let beforeRange = NSRange(location: currentLocation, length: bulletGlyphRange.location - currentLocation)
+                if currentLocation < glyphRange.location {
+                    let beforeRange = NSRange(location: currentLocation, length: glyphRange.location - currentLocation)
                     super.drawGlyphs(forGlyphRange: beforeRange, at: origin)
                 }
                 
-                // Draw bullet instead of "- "
-                drawBullet(forGlyphRange: bulletGlyphRange, at: origin, color: bulletRange.color)
+                switch customRange.type {
+                case .bullet:
+                    drawBullet(forGlyphRange: glyphRange, at: origin, color: customRange.color)
+                case .todoUnchecked:
+                    drawCheckbox(forGlyphRange: glyphRange, at: origin, checked: false, color: customRange.color)
+                case .todoChecked:
+                    drawCheckbox(forGlyphRange: glyphRange, at: origin, checked: true, color: customRange.color)
+                }
                 
-                currentLocation = bulletGlyphRange.location + bulletGlyphRange.length
+                currentLocation = glyphRange.location + glyphRange.length
             }
             
-            // Draw remaining glyphs after last bullet
             if currentLocation < endLocation {
                 let afterRange = NSRange(location: currentLocation, length: endLocation - currentLocation)
                 super.drawGlyphs(forGlyphRange: afterRange, at: origin)
@@ -95,6 +116,57 @@ class CursorLayoutManager: NSLayoutManager {
         
         let attrString = NSAttributedString(string: bulletString, attributes: attributes)
         attrString.draw(at: boundingRect.origin)
+    }
+    
+    private func drawCheckbox(forGlyphRange glyphRange: NSRange, at origin: NSPoint, checked: Bool, color: NSColor) {
+        guard let textContainer = textContainers.first else { return }
+        
+        var boundingRect = self.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        boundingRect.origin.x += origin.x
+        boundingRect.origin.y += origin.y
+        
+        // Get the line height from the actual text line for proper sizing
+        let characterRange = self.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+        let font = textStorage?.attribute(.font, at: characterRange.location, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 14)
+        let lineHeight = boundingRect.height
+        let size: CGFloat = min(lineHeight * 0.75, 14)
+        let checkboxRect = NSRect(
+            x: boundingRect.origin.x + (boundingRect.width - size) / 2,
+            y: boundingRect.origin.y + (lineHeight - size) / 2,
+            width: size,
+            height: size
+        )
+        
+        let path = NSBezierPath(roundedRect: checkboxRect, xRadius: 3, yRadius: 3)
+        
+        if checked {
+            NSColor(red: 0.4, green: 0.8, blue: 0.4, alpha: 1.0).setFill()
+            path.fill()
+            
+            // Draw checkmark
+            let checkPath = NSBezierPath()
+            let inset: CGFloat = size * 0.25
+            let left = checkboxRect.origin.x + inset
+            let right = checkboxRect.origin.x + size - inset
+            let top = checkboxRect.origin.y + inset
+            let bottom = checkboxRect.origin.y + size - inset
+            let midX = checkboxRect.origin.x + size * 0.42
+            let midY = checkboxRect.origin.y + size - inset
+            
+            checkPath.move(to: NSPoint(x: left, y: checkboxRect.midY))
+            checkPath.line(to: NSPoint(x: midX, y: midY))
+            checkPath.line(to: NSPoint(x: right, y: top))
+            
+            NSColor.white.setStroke()
+            checkPath.lineWidth = 1.5
+            checkPath.lineCapStyle = .round
+            checkPath.lineJoinStyle = .round
+            checkPath.stroke()
+        } else {
+            NSColor.gray.withAlphaComponent(0.4).setStroke()
+            path.lineWidth = 1.5
+            path.stroke()
+        }
     }
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {

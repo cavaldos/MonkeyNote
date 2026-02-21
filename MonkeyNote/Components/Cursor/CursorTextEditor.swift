@@ -347,6 +347,15 @@ class CursorTextView: NSTextView {
         let point = convert(event.locationInWindow, from: nil)
         let charIndex = characterIndexForInsertion(at: point)
         
+        // Check if clicked on a todo checkbox
+        if charIndex < textStorage?.length ?? 0,
+           let attrs = textStorage?.attributes(at: charIndex, effectiveRange: nil) {
+            if attrs[NSAttributedString.Key("todoUnchecked")] != nil || attrs[NSAttributedString.Key("todoChecked")] != nil {
+                toggleTodoAtCharIndex(charIndex)
+                return
+            }
+        }
+        
         // Check if clicked on a link
         if charIndex < textStorage?.length ?? 0,
            let attrs = textStorage?.attributes(at: charIndex, effectiveRange: nil),
@@ -356,6 +365,31 @@ class CursorTextView: NSTextView {
         }
         
         super.mouseDown(with: event)
+    }
+    
+    // MARK: - Todo Toggle
+    
+    func toggleTodoAtCharIndex(_ charIndex: Int) {
+        let text = self.string as NSString
+        let lineRange = text.lineRange(for: NSRange(location: charIndex, length: 0))
+        let lineText = text.substring(with: lineRange)
+        
+        let newLineText: String
+        if lineText.hasPrefix("- [ ] ") {
+            newLineText = "- [x] " + String(lineText.dropFirst("- [ ] ".count))
+        } else if lineText.hasPrefix("- [x] ") || lineText.hasPrefix("- [X] ") {
+            newLineText = "- [ ] " + String(lineText.dropFirst("- [x] ".count))
+        } else if lineText.hasPrefix("- [ ]") {
+            newLineText = "- [x]" + String(lineText.dropFirst("- [ ]".count))
+        } else if lineText.hasPrefix("- [x]") || lineText.hasPrefix("- [X]") {
+            newLineText = "- [ ]" + String(lineText.dropFirst("- [x]".count))
+        } else {
+            return
+        }
+        
+        let savedSelection = self.selectedRange()
+        self.replaceCharacters(in: lineRange, with: newLineText)
+        self.setSelectedRange(savedSelection)
     }
     
     override func layout() {

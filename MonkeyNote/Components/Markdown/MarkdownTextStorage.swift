@@ -464,6 +464,45 @@ class MarkdownTextStorage: NSTextStorage {
             return
         }
         
+        // For todo list, render checkbox and apply strikethrough for checked items
+        if case .todoUnchecked = match.style {
+            // Use a condensed font so "- [ ]" takes up roughly the same width as "• "
+            let compactFont = NSFont.systemFont(ofSize: baseFont.pointSize * 0.38)
+            let todoAttributes: [NSAttributedString.Key: Any] = [
+                .font: compactFont,
+                .foregroundColor: NSColor.clear,
+                NSAttributedString.Key("todoUnchecked"): true
+            ]
+            backingStore.addAttributes(todoAttributes, range: match.range)
+            return
+        }
+        
+        if case .todoChecked = match.style {
+            let compactFont = NSFont.systemFont(ofSize: baseFont.pointSize * 0.38)
+            let todoAttributes: [NSAttributedString.Key: Any] = [
+                .font: compactFont,
+                .foregroundColor: NSColor.clear,
+                NSAttributedString.Key("todoChecked"): true
+            ]
+            backingStore.addAttributes(todoAttributes, range: match.range)
+            
+            // Apply strikethrough and dimmed color to the rest of the line after the marker
+            let text = backingStore.string as NSString
+            let lineRange = text.lineRange(for: match.range)
+            let contentStart = match.range.location + match.range.length
+            let contentLength = (lineRange.location + lineRange.length) - contentStart
+            if contentLength > 0 {
+                let contentRange = NSRange(location: contentStart, length: contentLength)
+                guard contentRange.location + contentRange.length <= backingStore.length else { return }
+                backingStore.addAttributes([
+                    .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+                    .strikethroughColor: NSColor.gray.withAlphaComponent(0.6),
+                    .foregroundColor: NSColor.gray
+                ], range: contentRange)
+            }
+            return
+        }
+        
         // For bullet list, check if it's a dash that needs to be rendered as bullet
         if case .bulletList = match.style {
             let matchText = (backingStore.string as NSString).substring(with: match.range)
