@@ -707,7 +707,7 @@ class VaultManager: ObservableObject {
     
     /// Restore a trash item back to the folder structure
     func restoreTrashItem(_ item: TrashItem, into folders: inout [NoteFolder]) {
-        guard let vaultURL = vaultURL else { return }
+        guard vaultURL != nil else { return }
         
         let pathComponents = item.relativePath.components(separatedBy: "/")
         

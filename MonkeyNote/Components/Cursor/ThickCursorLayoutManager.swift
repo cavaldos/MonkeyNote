@@ -126,8 +126,6 @@ class CursorLayoutManager: NSLayoutManager {
         boundingRect.origin.y += origin.y
         
         // Get the line height from the actual text line for proper sizing
-        let characterRange = self.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-        let font = textStorage?.attribute(.font, at: characterRange.location, effectiveRange: nil) as? NSFont ?? NSFont.systemFont(ofSize: 14)
         let lineHeight = boundingRect.height
         let size: CGFloat = min(lineHeight * 0.75, 14)
         let checkboxRect = NSRect(
@@ -149,7 +147,6 @@ class CursorLayoutManager: NSLayoutManager {
             let left = checkboxRect.origin.x + inset
             let right = checkboxRect.origin.x + size - inset
             let top = checkboxRect.origin.y + inset
-            let bottom = checkboxRect.origin.y + size - inset
             let midX = checkboxRect.origin.x + size * 0.42
             let midY = checkboxRect.origin.y + size - inset
             
@@ -267,13 +264,6 @@ class CursorLayoutManager: NSLayoutManager {
                 bgRect.origin.x = origin.x
                 bgRect.origin.y += origin.y
                 bgRect.size.width = textContainer.size.width
-                
-                // Minimal vertical padding - stay strictly within line bounds
-                // No extra padding to avoid overlapping with adjacent lines
-                let topPadding: CGFloat = 2
-                let bottomPadding: CGFloat = 2
-                // bgRect.origin.y -= topPadding
-                // bgRect.size.height += topPadding
                 
                 let bgColor = NSColor.gray.withAlphaComponent(0.12)
                 let bgPath = NSBezierPath(roundedRect: bgRect, xRadius: 6, yRadius: 6)

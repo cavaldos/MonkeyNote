@@ -57,7 +57,7 @@ struct SettingsView: View {
                 selectedTab = tab
             }
         }
-        .onChange(of: selectedTab) { newValue in
+        .onChange(of: selectedTab) { _, newValue in
             UserDefaults.standard.set(newValue.rawValue, forKey: "selectedSettingsTab")
         }
     }

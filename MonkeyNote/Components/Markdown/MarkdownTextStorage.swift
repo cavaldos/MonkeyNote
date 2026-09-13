@@ -17,13 +17,18 @@ class MarkdownTextStorage: NSTextStorage {
     
     var baseFont: NSFont = NSFont.systemFont(ofSize: 14) {
         didSet {
-            reprocessMarkdown()
+            if oldValue != baseFont {
+                invalidateBaseStyleCache()
+                reprocessMarkdown()
+            }
         }
     }
     
     var baseTextColor: NSColor = .labelColor {
         didSet {
-            reprocessMarkdown()
+            if oldValue != baseTextColor {
+                reprocessMarkdown()
+            }
         }
     }
     
@@ -39,8 +44,13 @@ class MarkdownTextStorage: NSTextStorage {
     // Current cursor position - updated by text view
     var cursorPosition: Int = 0 {
         didSet {
-            if oldValue != cursorPosition {
-                updateSyntaxVisibility()
+            guard oldValue != cursorPosition else { return }
+
+            if isViewportMode {
+                scheduleSyntaxVisibilityUpdate()
+            } else {
+                updateSyntaxVisibility(from: appliedCursorPosition, to: cursorPosition)
+                appliedCursorPosition = cursorPosition
             }
         }
     }
@@ -57,14 +67,9 @@ class MarkdownTextStorage: NSTextStorage {
     private let debounceDelay: TimeInterval = 0.15 // 150ms delay for full re-parse
     private var pendingEditedRange: NSRange?
     private var hasPendingFullParse: Bool = false
-    
-    // Track last cursor line to detect line changes
-    private var lastCursorLine: Int = -1
-    
-    // MARK: - Incremental Parsing Cache
-    // Cache matches by paragraph index for incremental updates
-    private var paragraphCache: [Int: [MarkdownMatch]] = [:]
-    private var paragraphRanges: [NSRange] = []
+    private var syntaxVisibilityWorkItem: DispatchWorkItem?
+    private let syntaxVisibilityDebounceDelay: TimeInterval = 0.08
+    private var appliedCursorPosition: Int = 0
     
     // MARK: - Viewport-based Rendering (for large documents)
     // Threshold for switching to viewport-based mode (characters)
@@ -77,14 +82,18 @@ class MarkdownTextStorage: NSTextStorage {
     private var extendedRange: NSRange = NSRange(location: 0, length: 0)
     
     // Buffer size above/below visible area (lines)
-    private let viewportBufferLines: Int = 200
+    private let viewportBufferLines: Int = 120
     
     // Minimum change threshold before re-parsing (characters)
-    private let viewportChangeThreshold: Int = 1000
+    private let viewportChangeThreshold: Int = 2500
     
     // Track if using viewport mode
     private var isViewportMode: Bool {
         return backingStore.length > largeDocumentThreshold
+    }
+
+    var isLargeDocument: Bool {
+        isViewportMode
     }
     
     // Cache matches only for extended range in viewport mode
@@ -92,6 +101,48 @@ class MarkdownTextStorage: NSTextStorage {
     
     // Track last styled range to avoid redundant work
     private var lastStyledRange: NSRange = NSRange(location: 0, length: 0)
+
+    private var cachedBaseParagraphStyle: NSParagraphStyle?
+    private var cachedBaseParagraphStylePointSize: CGFloat = 0
+    private let paragraphSpacingFactor: CGFloat = 0.28
+    private let minParagraphSpacing: CGFloat = 4
+    private let maxParagraphSpacing: CGFloat = 16
+
+    deinit {
+        debounceTimer?.invalidate()
+        syntaxVisibilityWorkItem?.cancel()
+    }
+
+    private func invalidateBaseStyleCache() {
+        cachedBaseParagraphStyle = nil
+        cachedBaseParagraphStylePointSize = 0
+    }
+
+    private var baseParagraphStyle: NSParagraphStyle {
+        if let cachedBaseParagraphStyle,
+           cachedBaseParagraphStylePointSize == baseFont.pointSize {
+            return cachedBaseParagraphStyle
+        }
+
+        let paragraphStyle = NSMutableParagraphStyle()
+        let computedSpacing = round(baseFont.pointSize * paragraphSpacingFactor)
+        paragraphStyle.paragraphSpacing = min(max(computedSpacing, minParagraphSpacing), maxParagraphSpacing)
+        paragraphStyle.paragraphSpacingBefore = 0
+        paragraphStyle.lineSpacing = 0
+        paragraphStyle.lineBreakMode = .byWordWrapping
+
+        cachedBaseParagraphStyle = paragraphStyle
+        cachedBaseParagraphStylePointSize = baseFont.pointSize
+        return paragraphStyle
+    }
+
+    private var baseAttributes: [NSAttributedString.Key: Any] {
+        [
+            .font: baseFont,
+            .foregroundColor: baseTextColor,
+            .paragraphStyle: baseParagraphStyle
+        ]
+    }
     
     // MARK: - NSTextStorage Required Overrides
     
@@ -137,7 +188,14 @@ class MarkdownTextStorage: NSTextStorage {
         // Apply immediate markdown styling to the edited line only (no flicker)
         if !isProcessing && backingStore.length > 0 && markdownRenderEnabled {
             isProcessing = true
-            applyImmediateMarkdownStyling(editedRange: editedRange, changeInLength: changeInLength)
+            let isLargeBulkEdit = isViewportMode && (abs(changeInLength) > 256 || editedRange.length > 256)
+
+            if isLargeBulkEdit {
+                // Avoid expensive whole-document parsing during large updates.
+                applyBaseStylingToRange(editedRange)
+            } else {
+                applyImmediateMarkdownStyling(editedRange: editedRange, changeInLength: changeInLength)
+            }
             isProcessing = false
         } else if !isProcessing && backingStore.length > 0 {
             // Markdown disabled - just apply base styling to new characters
@@ -160,6 +218,14 @@ class MarkdownTextStorage: NSTextStorage {
     
     private func performDebouncedProcessing() {
         guard hasPendingFullParse, !isProcessing, backingStore.length > 0 else { return }
+
+        // In viewport mode we wait for a valid visible range before re-parsing,
+        // otherwise opening large files can trigger an expensive full-document parse.
+        if isViewportMode && extendedRange.length == 0 {
+            hasPendingFullParse = false
+            pendingEditedRange = nil
+            return
+        }
         
         isProcessing = true
         hasPendingFullParse = false
@@ -199,10 +265,7 @@ class MarkdownTextStorage: NSTextStorage {
         guard range.length > 0 else { return }
         
         // Apply base styling only - no markdown parsing
-        backingStore.setAttributes([
-            .font: baseFont,
-            .foregroundColor: baseTextColor
-        ], range: range)
+        backingStore.setAttributes(baseAttributes, range: range)
     }
     
     // MARK: - Immediate Markdown Styling (No Flicker)
@@ -221,10 +284,7 @@ class MarkdownTextStorage: NSTextStorage {
         // For single character insertions (typical typing), use smart incremental update
         if changeInLength == 1 && editedRange.length == 1 {
             // Apply base styling only to the new character
-            backingStore.setAttributes([
-                .font: baseFont,
-                .foregroundColor: baseTextColor
-            ], range: editedRange)
+            backingStore.setAttributes(baseAttributes, range: editedRange)
             
             // Re-parse and apply styling to the current line only
             let lineText = text.substring(with: lineRange)
@@ -272,10 +332,7 @@ class MarkdownTextStorage: NSTextStorage {
             let lineText = text.substring(with: lineRange)
             
             // Reset the line to base styling first
-            backingStore.setAttributes([
-                .font: baseFont,
-                .foregroundColor: baseTextColor
-            ], range: lineRange)
+            backingStore.setAttributes(baseAttributes, range: lineRange)
             
             // Re-parse and apply
             let localMatches = parser.parse(lineText)
@@ -297,10 +354,7 @@ class MarkdownTextStorage: NSTextStorage {
             guard paragraphRange.location + paragraphRange.length <= backingStore.length else { return }
             
             // Reset and re-parse
-            backingStore.setAttributes([
-                .font: baseFont,
-                .foregroundColor: baseTextColor
-            ], range: paragraphRange)
+            backingStore.setAttributes(baseAttributes, range: paragraphRange)
             
             let paragraphText = text.substring(with: paragraphRange)
             let localMatches = parser.parse(paragraphText)
@@ -364,10 +418,7 @@ class MarkdownTextStorage: NSTextStorage {
         }
         
         // Reset base styling for affected paragraph(s)
-        backingStore.setAttributes([
-            .font: baseFont,
-            .foregroundColor: baseTextColor
-        ], range: affectedParagraphRange)
+        backingStore.setAttributes(baseAttributes, range: affectedParagraphRange)
         
         // Parse only the affected paragraph(s)
         let affectedText = text.substring(with: affectedParagraphRange)
@@ -432,10 +483,7 @@ class MarkdownTextStorage: NSTextStorage {
         let fullRange = NSRange(location: 0, length: backingStore.length)
         
         // Reset all attributes to base
-        backingStore.setAttributes([
-            .font: baseFont,
-            .foregroundColor: baseTextColor
-        ], range: fullRange)
+        backingStore.setAttributes(baseAttributes, range: fullRange)
         
         // If markdown rendering is disabled, just use plain text styling
         guard markdownRenderEnabled else {
@@ -453,6 +501,8 @@ class MarkdownTextStorage: NSTextStorage {
         for match in cachedMatches {
             applyMatchStyling(match, cursorInRange: isCursorInMatch(match))
         }
+
+        appliedCursorPosition = cursorPosition
     }
     
     // MARK: - Apply Styling to Single Match
@@ -564,50 +614,75 @@ class MarkdownTextStorage: NSTextStorage {
     // MARK: - Update Syntax Visibility
     
     func updateSyntaxVisibility() {
+        updateSyntaxVisibility(from: appliedCursorPosition, to: cursorPosition)
+        appliedCursorPosition = cursorPosition
+    }
+
+    private func scheduleSyntaxVisibilityUpdate() {
+        syntaxVisibilityWorkItem?.cancel()
+
+        let oldPosition = appliedCursorPosition
+        let newPosition = cursorPosition
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.updateSyntaxVisibility(from: oldPosition, to: newPosition)
+            self.appliedCursorPosition = newPosition
+        }
+
+        syntaxVisibilityWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + syntaxVisibilityDebounceDelay, execute: workItem)
+    }
+
+    private func updateSyntaxVisibility(from oldPosition: Int, to newPosition: Int) {
         // Skip syntax visibility updates if markdown rendering is disabled
         guard markdownRenderEnabled, !isProcessing, backingStore.length > 0 else { return }
-        
-        isProcessing = true
-        
-        beginEditing()
-        
-        // In viewport mode, only update matches within extended range
-        if isViewportMode {
-            updateViewportSyntaxVisibility()
-        } else {
-            updateFullSyntaxVisibility()
+
+        let sourceMatches = isViewportMode ? viewportMatches : cachedMatches
+        guard !sourceMatches.isEmpty else { return }
+
+        let affectedMatches = sourceMatches.filter { match in
+            matchContainsCursor(match, position: oldPosition) || matchContainsCursor(match, position: newPosition)
         }
-        
-        let updateRange = isViewportMode ? extendedRange : NSRange(location: 0, length: backingStore.length)
-        if updateRange.length > 0 {
+
+        guard !affectedMatches.isEmpty else { return }
+
+        isProcessing = true
+
+        beginEditing()
+
+        for match in affectedMatches {
+            updateMatchSyntaxVisibility(match)
+        }
+
+        if let updateRange = combinedSyntaxRange(for: affectedMatches) {
             edited(.editedAttributes, range: updateRange, changeInLength: 0)
         }
-        
+
         endEditing()
-        
+
         isProcessing = false
     }
-    
-    /// Update syntax visibility for full document (small documents)
-    private func updateFullSyntaxVisibility() {
-        // Reparse if needed
-        if lastParsedString != string {
-            cachedMatches = parser.parse(string)
-            lastParsedString = string
-        }
-        
-        // Update visibility for all matches
-        for match in cachedMatches {
-            updateMatchSyntaxVisibility(match)
-        }
+
+    private func matchContainsCursor(_ match: MarkdownMatch, position: Int) -> Bool {
+        guard position >= 0 else { return false }
+        return position >= match.range.location && position <= match.range.location + match.range.length
     }
-    
-    /// Update syntax visibility only for viewport matches (large documents)
-    private func updateViewportSyntaxVisibility() {
-        // Only update matches in viewport
-        for match in viewportMatches {
-            updateMatchSyntaxVisibility(match)
+
+    private func combinedSyntaxRange(for matches: [MarkdownMatch]) -> NSRange? {
+        var minLocation = Int.max
+        var maxEnd = 0
+
+        for match in matches {
+            for syntaxRange in match.syntaxRanges {
+                guard syntaxRange.length > 0 else { continue }
+                minLocation = min(minLocation, syntaxRange.location)
+                maxEnd = max(maxEnd, syntaxRange.location + syntaxRange.length)
+            }
         }
+
+        guard minLocation != Int.max, maxEnd > minLocation else { return nil }
+        return NSRange(location: minLocation, length: maxEnd - minLocation)
     }
     
     /// Update syntax visibility for a single match
@@ -633,13 +708,23 @@ class MarkdownTextStorage: NSTextStorage {
     
     func reprocessMarkdown() {
         guard backingStore.length > 0 else { return }
+
+        syntaxVisibilityWorkItem?.cancel()
         
         isProcessing = true
         
         beginEditing()
-        
-        // Use viewport-based styling for large documents
-        if isViewportMode && extendedRange.length > 0 {
+
+        let fullRange = NSRange(location: 0, length: backingStore.length)
+
+        // For large documents with unknown viewport, defer heavy parsing until
+        // updateVisibleRange() provides a concrete visible range.
+        if isViewportMode && extendedRange.length == 0 {
+            backingStore.setAttributes(baseAttributes, range: fullRange)
+            viewportMatches = []
+            cachedMatches = []
+            lastParsedString = string
+        } else if isViewportMode && extendedRange.length > 0 {
             applyViewportMarkdownStyling()
         } else {
             applyFullMarkdownStyling()
@@ -649,7 +734,7 @@ class MarkdownTextStorage: NSTextStorage {
         if isViewportMode, extendedRange.length > 0 {
             updateRange = extendedRange
         } else {
-            updateRange = NSRange(location: 0, length: backingStore.length)
+            updateRange = fullRange
         }
         if updateRange.length > 0 {
             edited(.editedAttributes, range: updateRange, changeInLength: 0)
@@ -658,6 +743,7 @@ class MarkdownTextStorage: NSTextStorage {
         endEditing()
         
         isProcessing = false
+        appliedCursorPosition = cursorPosition
     }
     
     // MARK: - Viewport-based Rendering
@@ -701,8 +787,9 @@ class MarkdownTextStorage: NSTextStorage {
         // Skip if range hasn't changed significantly (avoid excessive re-parsing)
         let locationChange = abs(extendedRange.location - newExtendedRange.location)
         let lengthChange = abs(extendedRange.length - newExtendedRange.length)
-        
-        if locationChange < viewportChangeThreshold && lengthChange < viewportChangeThreshold {
+
+        let requiresInitialStyling = extendedRange.length == 0 || viewportMatches.isEmpty
+        if !requiresInitialStyling && locationChange < viewportChangeThreshold && lengthChange < viewportChangeThreshold {
             return
         }
         
@@ -741,10 +828,7 @@ class MarkdownTextStorage: NSTextStorage {
         guard paragraphRange.location + paragraphRange.length <= backingStore.length else { return }
         
         // Reset base styling for extended range
-        backingStore.setAttributes([
-            .font: baseFont,
-            .foregroundColor: baseTextColor
-        ], range: paragraphRange)
+        backingStore.setAttributes(baseAttributes, range: paragraphRange)
         
         // Parse only the visible portion
         let visibleText = text.substring(with: paragraphRange)
@@ -785,6 +869,7 @@ class MarkdownTextStorage: NSTextStorage {
         }
         
         lastStyledRange = paragraphRange
+        appliedCursorPosition = cursorPosition
     }
 }
 

@@ -21,7 +21,7 @@ extension CursorTextView {
             lastSearchQuery = query
         }
         
-        guard !query.isEmpty, let layoutManager = layoutManager, let textContainer = textContainer else {
+        guard !query.isEmpty else {
             clearAllHighlights()
             onSearchMatchesChanged?(0, true)
             return

@@ -397,14 +397,20 @@ class CursorTextView: NSTextView {
         
         // Debounce viewport updates for markdown rendering
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(debouncedUpdateViewport), object: nil)
-        perform(#selector(debouncedUpdateViewport), with: nil, afterDelay: 0.05)
+        let viewportDelay: TimeInterval
+        if let markdownStorage = textStorage as? MarkdownTextStorage, markdownStorage.isLargeDocument {
+            viewportDelay = 0.12
+        } else {
+            viewportDelay = 0.05
+        }
+        perform(#selector(debouncedUpdateViewport), with: nil, afterDelay: viewportDelay)
         
         // Only update search highlights if search is active
         guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
         // Debounce scroll updates to prevent excessive redraws
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(debouncedUpdateHighlights), object: nil)
-        perform(#selector(debouncedUpdateHighlights), with: nil, afterDelay: 0.03)
+        perform(#selector(debouncedUpdateHighlights), with: nil, afterDelay: 0.08)
     }
     
     /// Update viewport for markdown rendering (debounced)
@@ -512,8 +518,8 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.isAutomaticQuoteSubstitutionEnabled = false // disable "smart quotes"
         textView.isAutomaticDashSubstitutionEnabled = false // disable — em dash substitution
         textView.isAutomaticTextReplacementEnabled = false // disable text replacement (e.g., (c) -> ©)
-        textView.isAutomaticSpellingCorrectionEnabled = true // disable spelling correction
-        textView.smartInsertDeleteEnabled = true // disable smart insert/delete
+        textView.isAutomaticSpellingCorrectionEnabled = false // disable spelling correction
+        textView.smartInsertDeleteEnabled = false // disable smart insert/delete
 
         
         // Critical settings for proper scrolling
@@ -557,9 +563,6 @@ struct ThickCursorTextEditor: NSViewRepresentable {
 
         textView.delegate = context.coordinator
         textView.string = text
-        
-        // Trigger initial markdown processing
-        textStorage.reprocessMarkdown()
 
         scrollView.documentView = textView
         context.coordinator.textView = textView
@@ -576,11 +579,6 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             let safeLocation = min(selectedRange.location, text.utf16.count)
             let safeLength = min(selectedRange.length, text.utf16.count - safeLocation)
             textView.setSelectedRange(NSRange(location: safeLocation, length: safeLength))
-            
-            // Reprocess markdown when text changes externally
-            if let textStorage = textView.textStorage as? MarkdownTextStorage {
-                textStorage.reprocessMarkdown()
-            }
         }
 
         textView.cursorWidth = cursorWidth
@@ -629,24 +627,32 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         
         // Update MarkdownTextStorage settings
         if let textStorage = textView.textStorage as? MarkdownTextStorage {
-            let needsReprocess = textStorage.baseFont != font || textStorage.baseTextColor != textColor || textStorage.markdownRenderEnabled != markdownRenderEnabled
-            textStorage.baseFont = font
-            textStorage.baseTextColor = textColor
-            textStorage.markdownRenderEnabled = markdownRenderEnabled
-            if needsReprocess {
-                textStorage.reprocessMarkdown()
+            if textStorage.baseFont != font {
+                textStorage.baseFont = font
+            }
+            if textStorage.baseTextColor != textColor {
+                textStorage.baseTextColor = textColor
+            }
+            if textStorage.markdownRenderEnabled != markdownRenderEnabled {
+                textStorage.markdownRenderEnabled = markdownRenderEnabled
             }
         }
 
         // Check if search index changed and navigate to match
         let previousIndex = context.coordinator.lastSearchIndex
-        if currentSearchIndex != previousIndex && !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            context.coordinator.lastSearchIndex = currentSearchIndex
-            // Need to update highlights first to populate searchMatchRanges
-            textView.updateHighlights()
-            // Then navigate to the match
-            textView.navigateToMatch(index: currentSearchIndex)
-        } else {
+        let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedSearch.isEmpty {
+            if currentSearchIndex != previousIndex {
+                context.coordinator.lastSearchIndex = currentSearchIndex
+                // Need to update highlights first to populate searchMatchRanges
+                textView.updateHighlights()
+                // Then navigate to the match
+                textView.navigateToMatch(index: currentSearchIndex)
+            } else {
+                textView.updateHighlights()
+            }
+        } else if !textView.lastSearchQuery.isEmpty || !textView.highlightLayers.isEmpty {
+            // Clear stale search layers once when search is closed
             textView.updateHighlights()
         }
     }

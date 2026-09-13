@@ -195,7 +195,6 @@ class MarkdownParser {
         let lines = text.components(separatedBy: "\n")
         var currentIndex = 0
         var inCallout = false
-        var calloutStartIndex = 0
         
         for (lineIndex, line) in lines.enumerated() {
             let lineStart = currentIndex
@@ -208,7 +207,6 @@ class MarkdownParser {
             if isCalloutHeader {
                 // Start new callout block
                 inCallout = true
-                calloutStartIndex = lineStart
                 
                 // Find the "> [!type]" prefix to mark as syntax
                 let syntaxEndIndex = line.firstIndex(of: "]").map { line.distance(from: line.startIndex, to: $0) + 1 } ?? 0

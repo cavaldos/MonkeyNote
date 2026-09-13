@@ -114,7 +114,7 @@ struct AppearanceSettingsView: View {
                         }
                     }
                     .frame(maxWidth: 200)
-                    .onChange(of: fontFamily) { newValue in
+                    .onChange(of: fontFamily) { _, newValue in
                         addToRecentFonts(newValue)
                     }
 

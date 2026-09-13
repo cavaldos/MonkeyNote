@@ -17,6 +17,7 @@ PROJECT_DIR="$SCRIPT_DIR"
 RELEASE_DIR="$PROJECT_DIR/release"
 APP_NAME="MonkeyNote"
 DMG_NAME="$APP_NAME.dmg"
+DESTINATION="platform=macOS,arch=arm64"
 
 echo -e "${YELLOW}========================================${NC}"
 echo -e "${YELLOW}   MonkeyNote Build Script${NC}"
@@ -33,6 +34,7 @@ echo -e "${YELLOW}[2/4] Building $APP_NAME (Release)...${NC}"
 xcodebuild -project "$PROJECT_DIR/$APP_NAME.xcodeproj" \
     -scheme "$APP_NAME" \
     -configuration Release \
+    -destination "$DESTINATION" \
     clean build \
     -quiet
 
@@ -48,6 +50,7 @@ echo -e "${YELLOW}[3/4] Locating built app...${NC}"
 BUILD_DIR=$(xcodebuild -project "$PROJECT_DIR/$APP_NAME.xcodeproj" \
     -scheme "$APP_NAME" \
     -configuration Release \
+    -destination "$DESTINATION" \
     -showBuildSettings 2>/dev/null | grep -m 1 "BUILT_PRODUCTS_DIR" | awk '{print $3}')
 
 APP_PATH="$BUILD_DIR/$APP_NAME.app"

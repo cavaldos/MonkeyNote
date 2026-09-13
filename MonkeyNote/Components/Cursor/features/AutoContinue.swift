@@ -109,7 +109,7 @@ extension CursorTextView {
             }
         }
         
-        super.insertText("\t")
+        super.insertText("\t", replacementRange: self.selectedRange())
         return true
     }
     
@@ -125,7 +125,7 @@ extension CursorTextView {
         
         // Check if we're in a todo list
         if trimmedLine.hasPrefix("- [ ] ") || trimmedLine.hasPrefix("- [x] ") || trimmedLine.hasPrefix("- [X] ") {
-            super.insertText("\n      ")
+            super.insertText("\n      ", replacementRange: self.selectedRange())
             return true
         }
         
@@ -133,19 +133,19 @@ extension CursorTextView {
         if let regex = try? NSRegularExpression(pattern: "^(\\d+)\\.", options: []),
            regex.firstMatch(in: trimmedLine, options: [], range: NSRange(location: 0, length: trimmedLine.utf16.count)) != nil {
             // Insert newline with indent (3 spaces to align with text after "1. ")
-            super.insertText("\n   ")
+            super.insertText("\n   ", replacementRange: self.selectedRange())
             return true
         }
         
         // Check if we're in a bullet list
         if trimmedLine.hasPrefix("•") {
             // Insert newline with indent (2 spaces to align with text after "• ")
-            super.insertText("\n  ")
+            super.insertText("\n  ", replacementRange: self.selectedRange())
             return true
         }
         
         // Default: just insert newline
-        super.insertText("\n")
+        super.insertText("\n", replacementRange: self.selectedRange())
         return true
     }
     
@@ -173,7 +173,7 @@ extension CursorTextView {
                 self.setSelectedRange(NSRange(location: lineRange.location, length: 0))
             } else {
                 let nextLineText = "\n- [ ] "
-                super.insertText(nextLineText)
+                super.insertText(nextLineText, replacementRange: self.selectedRange())
                 self.setSelectedRange(NSRange(location: selectedRange.location + nextLineText.utf16.count, length: 0))
             }
             return true
@@ -207,7 +207,7 @@ extension CursorTextView {
                 self.string = newString
                 self.setSelectedRange(NSRange(location: lineRange.location, length: 0))
             } else {
-                super.insertText("\n• ")
+                super.insertText("\n• ", replacementRange: self.selectedRange())
                 self.setSelectedRange(NSRange(location: selectedRange.location + "\n• ".utf16.count, length: 0))
             }
             return true
@@ -232,7 +232,7 @@ extension CursorTextView {
             } else {
                 let nextNumber = number + 1
                 let nextLineText = "\n\(nextNumber). "
-                super.insertText(nextLineText)
+                super.insertText(nextLineText, replacementRange: self.selectedRange())
                 self.setSelectedRange(NSRange(location: selectedRange.location + nextLineText.utf16.count, length: 0))
             }
             return true

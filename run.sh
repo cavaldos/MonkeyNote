@@ -1,1 +1,1 @@
-xcodebuild -project MonkeyNote.xcodeproj -scheme MonkeyNote -configuration Debug build && open ~/Library/Developer/Xcode/DerivedData/MonkeyNote-*/Build/Products/Debug/MonkeyNote.app
+xcodebuild -project MonkeyNote.xcodeproj -scheme MonkeyNote -configuration Debug -destination "platform=macOS,arch=arm64" build && open ~/Library/Developer/Xcode/DerivedData/MonkeyNote-*/Build/Products/Debug/MonkeyNote.app
