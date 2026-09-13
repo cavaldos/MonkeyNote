@@ -17,11 +17,6 @@ extension CursorTextView {
         // Hide autocomplete suggestion when cursor moves
         hideSuggestion()
         
-        // Update cursor position in MarkdownTextStorage for syntax visibility
-        if let textStorage = self.textStorage as? MarkdownTextStorage {
-            textStorage.cursorPosition = selectedRange.location
-        }
-        
         // Show selection toolbar when there's a selection (but not during search navigation)
         if selectedRange.length > 0 && !isNavigatingSearch {
             showSelectionToolbar(for: selectedRange)

@@ -271,11 +271,6 @@ class CursorTextView: NSTextView {
         
         super.insertText(insertString, replacementRange: replacementRange)
         
-        // Update cursor position in MarkdownTextStorage
-        if let textStorage = self.textStorage as? MarkdownTextStorage {
-            textStorage.cursorPosition = self.selectedRange().location
-        }
-        
         // Update autocomplete suggestion
         // Hide suggestion if space or punctuation is typed
         if str.rangeOfCharacter(from: CharacterSet.alphanumerics) == nil {
@@ -296,11 +291,6 @@ class CursorTextView: NSTextView {
     
     override func deleteBackward(_ sender: Any?) {
         super.deleteBackward(sender)
-        
-        // Update cursor position in MarkdownTextStorage
-        if let textStorage = self.textStorage as? MarkdownTextStorage {
-            textStorage.cursorPosition = self.selectedRange().location
-        }
         
         // Update suggestion after deletion
         updateSuggestion()
@@ -395,27 +385,12 @@ class CursorTextView: NSTextView {
     override func layout() {
         super.layout()
         
-        // Debounce viewport updates for markdown rendering
-        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(debouncedUpdateViewport), object: nil)
-        let viewportDelay: TimeInterval
-        if let markdownStorage = textStorage as? MarkdownTextStorage, markdownStorage.isLargeDocument {
-            viewportDelay = 0.12
-        } else {
-            viewportDelay = 0.05
-        }
-        perform(#selector(debouncedUpdateViewport), with: nil, afterDelay: viewportDelay)
-        
         // Only update search highlights if search is active
         guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
         // Debounce scroll updates to prevent excessive redraws
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(debouncedUpdateHighlights), object: nil)
         perform(#selector(debouncedUpdateHighlights), with: nil, afterDelay: 0.08)
-    }
-    
-    /// Update viewport for markdown rendering (debounced)
-    @objc func debouncedUpdateViewport() {
-        updateMarkdownViewport()
     }
     
     @objc func debouncedUpdateHighlights() {
@@ -453,7 +428,6 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     var autocompleteDelay: Double
     var autocompleteOpacity: Double
     var suggestionMode: String
-    var markdownRenderEnabled: Bool = true
     var horizontalPadding: CGFloat = 0
     
     // Double-tap navigation
@@ -484,8 +458,8 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         let layoutManager = CursorLayoutManager()
         layoutManager.cursorWidth = cursorWidth
 
-        // Use MarkdownTextStorage for live markdown rendering
-        let textStorage = MarkdownTextStorage()
+        // Plain text storage — no markdown rendering (removed for large-file performance)
+        let textStorage = NSTextStorage()
         textStorage.addLayoutManager(layoutManager)
 
         let textContainer = NSTextContainer()
@@ -507,7 +481,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.suggestionMode = suggestionMode
         textView.doubleTapNavigationEnabled = doubleTapNavigationEnabled
         textView.doubleTapDelay = doubleTapDelay
-        textView.isRichText = true  // Enable rich text for markdown styling
+        textView.isRichText = false  // Plain text — no markdown rendering
         textView.allowsUndo = true
         textView.isEditable = true
         textView.isSelectable = true
@@ -543,13 +517,6 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             }
         }
         textView.font = font
-        
-        // Configure MarkdownTextStorage with base font and color
-        textStorage.baseFont = font
-        textStorage.baseTextColor = isDarkMode
-            ? NSColor.white.withAlphaComponent(0.92)
-            : NSColor.black.withAlphaComponent(0.92)
-        textStorage.markdownRenderEnabled = markdownRenderEnabled
         
         textView.textColor = isDarkMode
             ? NSColor.white.withAlphaComponent(0.92)
@@ -625,19 +592,6 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             alpha: 1.0
         )
         
-        // Update MarkdownTextStorage settings
-        if let textStorage = textView.textStorage as? MarkdownTextStorage {
-            if textStorage.baseFont != font {
-                textStorage.baseFont = font
-            }
-            if textStorage.baseTextColor != textColor {
-                textStorage.baseTextColor = textColor
-            }
-            if textStorage.markdownRenderEnabled != markdownRenderEnabled {
-                textStorage.markdownRenderEnabled = markdownRenderEnabled
-            }
-        }
-
         // Check if search index changed and navigate to match
         let previousIndex = context.coordinator.lastSearchIndex
         let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -688,20 +642,11 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
-            
-            // Update cursor position in MarkdownTextStorage
-            if let textStorage = textView.textStorage as? MarkdownTextStorage {
-                textStorage.cursorPosition = textView.selectedRange().location
-            }
         }
         
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             
-            // Update cursor position in MarkdownTextStorage for syntax visibility
-            if let textStorage = textView.textStorage as? MarkdownTextStorage {
-                textStorage.cursorPosition = textView.selectedRange().location
-            }
             // Calculate and report cursor line
             let text = textView.string
             let cursorPosition = textView.selectedRange().location

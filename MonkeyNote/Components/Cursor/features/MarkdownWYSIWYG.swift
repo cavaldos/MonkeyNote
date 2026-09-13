@@ -164,22 +164,5 @@ extension CursorTextView {
         // Notify text did change
         didChangeText()
     }
-    
-    /// Notify MarkdownTextStorage about visible range for viewport-based rendering
-    func updateMarkdownViewport() {
-        guard let layoutManager = layoutManager,
-              let textContainer = textContainer,
-              let textStorage = textStorage as? MarkdownTextStorage else { return }
-        
-        let visibleRect = self.visibleRect
-        guard visibleRect.height > 0 else { return }
-        
-        // Get visible character range
-        let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
-        let visibleCharRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-        
-        // Notify text storage about visible range
-        textStorage.updateVisibleRange(visibleCharRange)
-    }
 }
 #endif

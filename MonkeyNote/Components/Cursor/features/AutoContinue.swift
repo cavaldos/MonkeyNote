@@ -263,11 +263,6 @@ extension CursorTextView {
                     let rangeToReplace = NSRange(location: prevCharIndex, length: 1)
                     self.replaceCharacters(in: rangeToReplace, with: "• ")
                     self.setSelectedRange(NSRange(location: prevCharIndex + "• ".utf16.count, length: 0))
-                    
-                    // Update cursor position in MarkdownTextStorage
-                    if let textStorage = self.textStorage as? MarkdownTextStorage {
-                        textStorage.cursorPosition = self.selectedRange().location
-                    }
                     return true
                 }
             }

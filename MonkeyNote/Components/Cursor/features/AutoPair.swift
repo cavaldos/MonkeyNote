@@ -25,11 +25,6 @@ extension CursorTextView {
             if nextChar == str {
                 // Skip over the existing closing character instead of inserting
                 self.setSelectedRange(NSRange(location: selectedRange.location + 1, length: 0))
-                
-                // Update cursor position in MarkdownTextStorage
-                if let textStorage = self.textStorage as? MarkdownTextStorage {
-                    textStorage.cursorPosition = self.selectedRange().location
-                }
                 return true
             }
         }
@@ -54,11 +49,6 @@ extension CursorTextView {
                 self.replaceCharacters(in: selectedRange, with: wrappedText)
                 // Position cursor after the wrapped text
                 self.setSelectedRange(NSRange(location: selectedRange.location + wrappedText.utf16.count, length: 0))
-                
-                // Update cursor position in MarkdownTextStorage
-                if let textStorage = self.textStorage as? MarkdownTextStorage {
-                    textStorage.cursorPosition = self.selectedRange().location
-                }
                 return true
             }
             
@@ -69,11 +59,6 @@ extension CursorTextView {
             // Move cursor back by 1 to be between the pair
             let newPosition = self.selectedRange().location - 1
             self.setSelectedRange(NSRange(location: newPosition, length: 0))
-            
-            // Update cursor position in MarkdownTextStorage
-            if let textStorage = self.textStorage as? MarkdownTextStorage {
-                textStorage.cursorPosition = self.selectedRange().location
-            }
             
             // Hide suggestion since we typed a special character
             hideSuggestion()
