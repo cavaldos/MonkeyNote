@@ -316,6 +316,11 @@ class CursorTextView: NSTextView {
 
         super.insertText(insertString, replacementRange: replacementRange)
 
+        // IME đang compose (Telex/VNI): selectedRange là marked range tạm,
+        // flash/suggestion lúc này tính sai rect + ép layout giữa composition
+        // → con trỏ nhảy. Bỏ qua, bản commit cuối sẽ chạy lại với marked=false.
+        guard !hasMarkedText() else { return }
+
         if largeDoc {
             // File lớn: chỉ update suggestion rẻ (đã tự gate bên trong), bỏ flash.
             if str.rangeOfCharacter(from: CharacterSet.alphanumerics) == nil {
@@ -681,7 +686,10 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? CursorTextView else { return }
 
-        if textView.string != text {
+        // Đang IME compose thì KHÔNG reset string: set string giữa chừng hủy
+        // composition + nhảy caret về cuối marked range. Bản commit cuối của
+        // IME sẽ đi qua textDidChange bình thường.
+        if textView.string != text && !textView.hasMarkedText() {
             let selectedRange = textView.selectedRange()
             textView.string = text
             let safeLocation = min(selectedRange.location, text.utf16.count)
@@ -796,9 +804,18 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     }
 
     private func applyParagraphSpacing(_ textView: CursorTextView, fontSize: Double) {
+        // Không sờ typingAttributes giữa IME compose + không set lại khi
+        // spacing y hệt: mỗi lần gán typingAttributes giữa chừng là một lần
+        // AppKit tính lại caret → gõ nhanh thấy nhảy.
+        // ponytail: early-return, không abstraction mới.
+        if textView.hasMarkedText() { return }
         let style = paragraphStyle(fontSize: fontSize)
-        // Cheap check: chỉ phủ lại storage khi spacing đổi (tránh full-scan mỗi keystroke)
         let current = textView.defaultParagraphStyle
+        let typingSpacing = (textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle)?.paragraphSpacing
+        if current?.paragraphSpacing == style.paragraphSpacing
+            && current?.lineSpacing == style.lineSpacing
+            && typingSpacing == style.paragraphSpacing { return }
+        // Cheap check: chỉ phủ lại storage khi spacing đổi (tránh full-scan mỗi keystroke)
         textView.defaultParagraphStyle = style
         var attrs = textView.typingAttributes
         attrs[.paragraphStyle] = style

@@ -12,6 +12,8 @@ import AppKit
 extension CursorTextView {
     
     func updateSuggestion() {
+        // IME compose (Telex/VNI): đừng sờ ghost layer/layout giữa chừng → nhảy caret.
+        guard !hasMarkedText() else { return }
         // File lớn: NSSpellChecker.completions chạy sync trên main thread mỗi
         // keystroke → tắt hẳn, gõ mượt quan trọng hơn gợi ý.
         guard !isLargeDocument else {

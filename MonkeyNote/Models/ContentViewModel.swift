@@ -226,10 +226,14 @@ final class ContentViewModel {
     // Single-pass document stats, cached by text equality (memcmp-fast).
     // StatusBar reads wordCount/lineCount/characterCount on every render, so
     // without the cache each keystroke scans the document 3 times.
-    private var _statsText = ""
-    private var _statsWords = 0
-    private var _statsLines = 1
-    private var _statsChars = 0
+    // @ObservationIgnored: refresh chạy trong lúc render body — nếu để
+    // observable thì mỗi phím gõ notify SwiftUI re-render cả cây, updateNSView
+    // thấy Binding cũ (chưa commit draft) sẽ reset textView.string → mất chữ,
+    // con trỏ nhảy lung tung. Stats chấp nhận trễ 1 nhịp debounce (0.8s).
+    @ObservationIgnored private var _statsText = ""
+    @ObservationIgnored private var _statsWords = 0
+    @ObservationIgnored private var _statsLines = 1
+    @ObservationIgnored private var _statsChars = 0
     // File lớn: đếm lại mỗi keystroke là full scan O(N) → throttle 1/s,
     // hẹn refresh 1 lần sau khi ngừng gõ để số liệu đúng lại.
     @ObservationIgnored private var _statsLastLargeRefresh = Date.distantPast
@@ -332,7 +336,13 @@ final class ContentViewModel {
     var selectedNoteTextBinding: Binding<String> {
         Binding(
             get: { [weak self] in
-                self?.selectedNote?.text ?? ""
+                // Draft-aware: lúc đang gõ, text thật nằm ở editorDraftText
+                // (@ObservationIgnored, chưa commit). Trả nominal (note.text)
+                // ở đây thì updateNSView thấy textView.string != text sau bất kỳ
+                // re-render nào (đổi dòng status, search count...) sẽ reset
+                // textView về bản cũ → mất chữ + con trỏ nhảy.
+                guard let self, let note = self.selectedNote else { return "" }
+                return self.liveTextFor(noteID: note.id, nominal: note.text)
             },
             set: { [weak self] newValue in
                 guard let self = self,
