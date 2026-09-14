@@ -171,6 +171,9 @@ struct DetailEditorView: View {
                 },
                 onCursorLineChanged: { line in
                     viewModel.updateCursorLine(line)
+                },
+                onTextEdited: { newText in
+                    viewModel.applyEditorText(newText)
                 }
             )
             .overlay(alignment: .topLeading) {

@@ -15,6 +15,15 @@ extension CursorTextView {
     /// Apply spellcheck state: toggle from UserDefaults, language shared with autocomplete.
     /// Cheap guards make it safe to call on every updateNSView.
     func applySpellcheckSettings() {
+        // File lớn: continuous spellcheck của AppKit recheck theo từng edit,
+        // giữ bật trên doc 40k dòng là lag trực tiếp → tắt, vẫn tôn trọng
+        // setting của user khi quay lại file nhỏ (updateNSView gọi mỗi lần).
+        if isLargeDocument {
+            if isContinuousSpellCheckingEnabled {
+                isContinuousSpellCheckingEnabled = false
+            }
+            return
+        }
         let enabled = UserDefaults.standard.object(forKey: "note.spellcheckEnabled") as? Bool ?? true
         if isContinuousSpellCheckingEnabled != enabled {
             isContinuousSpellCheckingEnabled = enabled

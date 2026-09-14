@@ -43,6 +43,7 @@ class CursorTextView: NSTextView {
     var isSearchComplete: Bool = false
     var lastSearchQuery: String = ""
     var lastVisibleRect: NSRect = .zero
+    var lastFullSearchTime: Date = .distantPast  // Throttle re-search file lớn
     
     // Layer pooling for reuse
     var layerPool: [CALayer] = []
@@ -67,7 +68,6 @@ class CursorTextView: NSTextView {
     
     // MARK: - Scroll Properties
     var disableAutoScroll: Bool = false
-    var isScrolling: Bool = false
     
     // MARK: - Layer Properties
     var cursorLayer: CALayer?
@@ -109,6 +109,16 @@ class CursorTextView: NSTextView {
     
     // MARK: - Selection Toolbar Properties
     var selectionToolbarController = SelectionToolbarController.shared
+
+    // Large-file mode: trên ngưỡng này thì tắt các việc nặng mỗi keystroke
+    // (snapshot EditFade, caret animation, autocomplete sync, spellcheck).
+    // Check O(1) qua textStorage.length — không đếm dòng/scan text.
+    // 300k UTF-16 units ≈ 7-8k dòng văn bản thường (vault cap là 5k dòng,
+    // nên chủ yếu ảnh hưởng file external lớn như 40k dòng).
+    static let largeDocumentLengthThreshold = 300_000
+    var isLargeDocument: Bool {
+        (textStorage?.length ?? string.utf16.count) > Self.largeDocumentLengthThreshold
+    }
     
     // Flag to track if selection is from search navigation
     var isNavigatingSearch: Bool = false
@@ -294,16 +304,26 @@ class CursorTextView: NSTextView {
         // TRƯỚC super: chụp nền nơi chữ sắp hiện để làm màn reveal —
         // sau super chữ đã vào rồi, chụp lúc đó không còn nền nữa.
         // Chỉ gõ nối cuối dòng, chuỗi ngắn, không xuống dòng, không IME.
+        // File lớn: bỏ snapshot (bitmap rep + cacheDisplay mỗi phím là frame drop).
         let preSel = selectedRange()
+        let largeDoc = isLargeDocument
         let coverPlan: (CGImage, NSRect)? =
-            (replacementRange.length == 0 && preSel.length == 0
-             && str.utf16.count <= 4 && !hasMarkedText()
-             && str.rangeOfCharacter(from: .newlines) == nil)
+            (!largeDoc
+             && replacementRange.length == 0 && preSel.length == 0
+              && str.utf16.count <= 4 && !hasMarkedText()
+              && str.rangeOfCharacter(from: .newlines) == nil)
             ? planInsertCover(str, at: preSel.location) : nil
 
         super.insertText(insertString, replacementRange: replacementRange)
 
-        if let plan = coverPlan {
+        if largeDoc {
+            // File lớn: chỉ update suggestion rẻ (đã tự gate bên trong), bỏ flash.
+            if str.rangeOfCharacter(from: CharacterSet.alphanumerics) == nil {
+                hideSuggestion()
+            } else {
+                updateSuggestion()
+            }
+        } else if let plan = coverPlan {
             showInsertCover(plan) // chữ mờ dần vào cùng nhịp caret
         } else if str.rangeOfCharacter(from: .newlines) == nil {
             // Bỏ qua \n: rect của ký tự xuống dòng rộng full-line,
@@ -337,8 +357,11 @@ class CursorTextView: NSTextView {
     override func deleteBackward(_ sender: Any?) {
         // Snapshot vùng sắp mất TRƯỚC khi xóa — sau super chữ đã đi rồi,
         // chụp lúc đó chỉ được nền trống nên mất fade.
+        // File lớn: bỏ snapshot, xóa thẳng.
+        let largeDoc = isLargeDocument
         var doomedImage: CGImage?
         var doomedRect: NSRect?
+        if !largeDoc {
         let sel = selectedRange()
         let ns = string as NSString
         let target: NSRange?
@@ -355,6 +378,7 @@ class CursorTextView: NSTextView {
         if let r = target, let rect = rectForCharacterRange(r) {
             doomedRect = rect
             doomedImage = snapshotExcludingCaret(of: rect)
+        }
         }
         super.deleteBackward(sender)
         if let img = doomedImage, let r = doomedRect {
@@ -475,19 +499,8 @@ class CursorTextView: NSTextView {
         updateHighlights()
     }
     
-    // Override to prevent flickering when scrolling to cursor
-    override func scrollRangeToVisible(_ range: NSRange) {
-        // Prevent multiple rapid scroll calls that cause flickering
-        guard !isScrolling else { return }
-        
-        isScrolling = true
-        super.scrollRangeToVisible(range)
-        
-        // Reset flag after a short delay to batch scroll requests
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.isScrolling = false
-        }
-    }
+    // Mặc định của AppKit tự coalesce theo runloop — gate 0.1s cũ làm caret
+    // tụt lại khi gõ nhanh (scroll giữ caret bị drop). Bỏ.
 }
 
 // MARK: - ThickCursorTextEditor (NSViewRepresentable)
@@ -540,6 +553,11 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     // Cursor position callback
     var onCursorLineChanged: ((Int) -> Void)? = nil
 
+    // Typing callback: textView là source of truth, ViewModel update silent
+    // (không re-render SwiftUI mỗi phím). Giữ `text` Binding cho chiều đọc
+    // (updateNSView phát hiện đổi note/file ngoài).
+    var onTextEdited: ((String) -> Void)? = nil
+
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -562,6 +580,9 @@ struct ThickCursorTextEditor: NSViewRepresentable {
 
         let layoutManager = CursorLayoutManager()
         layoutManager.cursorWidth = cursorWidth
+        // File lớn: chỉ layout vùng visible + lân cận, không dàn cả 40k dòng
+        // mỗi lần edit (mặc định NSLayoutManager layout contiguous).
+        layoutManager.allowsNonContiguousLayout = true
 
         // Plain text storage — no markdown rendering (removed for large-file performance)
         let textStorage = NSTextStorage()
@@ -819,7 +840,11 @@ struct ThickCursorTextEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            parent.text = textView.string
+            if let onTextEdited = parent.onTextEdited {
+                onTextEdited(textView.string)
+            } else {
+                parent.text = textView.string
+            }
         }
         
         func textViewDidChangeSelection(_ notification: Notification) {

@@ -14,13 +14,16 @@ extension CursorTextView {
     func handleSelectionChange() {
         let selectedRange = self.selectedRange()
         
-        // Hide autocomplete suggestion when cursor moves
-        hideSuggestion()
+        // Mũi tên di chuyển cũng qua đây mỗi lần nhấn — chỉ hide/dismiss khi
+        // đang có gì hiện, khỏi CATransaction/window-op vô ích.
+        if currentSuggestion != nil || suggestionTask != nil {
+            hideSuggestion()
+        }
         
         // Show selection toolbar when there's a selection (but not during search navigation)
         if selectedRange.length > 0 && !isNavigatingSearch {
             showSelectionToolbar(for: selectedRange)
-        } else {
+        } else if selectionToolbarController.isVisible {
             selectionToolbarController.dismiss()
         }
     }

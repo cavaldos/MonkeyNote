@@ -110,7 +110,7 @@ extension CursorTextView {
 
     /// Chữ vừa gõ: chớp highlight mờ sau chữ, fade cùng nhịp caret.
     func flashInsertedCharacters(in range: NSRange) {
-        guard caretShouldAnimate, let rect = rectForCharacterRange(range) else { return }
+        guard !isLargeDocument, caretShouldAnimate, let rect = rectForCharacterRange(range) else { return }
         if editFlashLayer == nil {
             let l = CALayer()
             l.cornerRadius = 2
@@ -138,7 +138,7 @@ extension CursorTextView {
     /// chữ "đợi" caret trượt tới. Mỗi ký tự một layer + timeline riêng (pool 12)
     /// nên giữ delete nhanh tạo vệt dissolve khớp caret.
     func flashDeletedImage(_ image: CGImage, at rect: NSRect) {
-        guard caretShouldAnimate, let layer = dequeueFadeLayer() else { return }
+        guard !isLargeDocument, caretShouldAnimate, let layer = dequeueFadeLayer() else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer.removeAnimation(forKey: "editFade")
@@ -207,7 +207,8 @@ extension CursorTextView {
     /// PHẦN 1 (gọi TRƯỚC super.insertText): đo chỗ chữ sắp hiện + snapshot nền.
     /// Trả (ảnh nền, rect phủ) để phần 2 reveal sau khi chữ đã vào.
     func planInsertCover(_ str: String, at loc: Int) -> (CGImage, NSRect)? {
-        guard caretShouldAnimate,
+        guard !isLargeDocument,
+              caretShouldAnimate,
               let pen = lineEndPenRect(at: loc) else { return nil }
         let font = self.font ?? NSFont.systemFont(ofSize: 14)
         let w = ceil((str as NSString).size(withAttributes: [.font: font]).width) + 2
@@ -220,7 +221,7 @@ extension CursorTextView {
     /// PHẦN 2 (gọi SAU super.insertText): phủ nền lên chữ mới rồi fade tấm phủ —
     /// chữ mờ dần vào cùng nhịp caret. Tan ngay không giữ (reveal càng nhanh càng thật).
     func showInsertCover(_ plan: (CGImage, NSRect)) {
-        guard let layer = dequeueFadeLayer() else { return }
+        guard !isLargeDocument, let layer = dequeueFadeLayer() else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer.removeAnimation(forKey: "editFade")

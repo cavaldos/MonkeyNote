@@ -25,7 +25,7 @@ extension CursorTextView {
     }
 
     var caretShouldAnimate: Bool {
-        cursorAnimationEnabled && !caretReducedMotion
+        cursorAnimationEnabled && !caretReducedMotion && !isLargeDocument
     }
 
     /// Monkeytype dùng anime.js ease "inOut(1.25)" (~ease-in-out).
@@ -60,11 +60,24 @@ extension CursorTextView {
     func animateCaretLayer(to thickRect: NSRect) {
         guard let layer = cursorLayer else { return }
         let animated = caretShouldAnimate && !shouldSnapCaret(from: lastCursorRect, to: thickRect)
+        let newPosition = snapToPixel(CGPoint(x: thickRect.midX, y: thickRect.midY))
+
+        // Snap (nhảy xa / file lớn / tắt animation): set cứng, không đọc
+        // presentation (tránh sync render server mỗi phím mũi tên), không đo
+        // nhịp (chỉ dùng tính duration animation).
+        if !animated {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.bounds = NSRect(origin: .zero, size: thickRect.size).integral
+            layer.removeAnimation(forKey: "caretSlide")
+            layer.position = newPosition
+            CATransaction.commit()
+            return
+        }
 
         // Vị trí mắt đang thấy (giữa animation cũ) — điểm bắt đầu của animation mới.
         // Đọc TRƯỚC khi set model value, nếu không sẽ luôn giật về đích cũ.
         let visualPosition = layer.presentation()?.position ?? layer.position
-        let newPosition = snapToPixel(CGPoint(x: thickRect.midX, y: thickRect.midY))
 
         // Đo nhịp gõ: gõ burst (dt < duration) mà giữ nguyên 0.15s thì animation
         // chồng nhau, caret mãi tụt sau chữ. Co duration theo dt để kịp chữ mới.
@@ -89,13 +102,7 @@ extension CursorTextView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer.bounds = NSRect(origin: .zero, size: thickRect.size).integral
-        if !animated {
-            layer.removeAnimation(forKey: "caretSlide")
-            layer.position = newPosition
-        }
         CATransaction.commit()
-
-        guard animated else { return }
 
         // Gõ gần xong mà animation cũ còn bay → bỏ qua move quá nhỏ (<0.5px) cho đỡ rung,
         // nhưng VẪN đồng bộ model về chữ mới nhất — nếu return sớm mà không set

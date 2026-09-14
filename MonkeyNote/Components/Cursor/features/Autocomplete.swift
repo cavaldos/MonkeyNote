@@ -12,6 +12,12 @@ import AppKit
 extension CursorTextView {
     
     func updateSuggestion() {
+        // File lớn: NSSpellChecker.completions chạy sync trên main thread mỗi
+        // keystroke → tắt hẳn, gõ mượt quan trọng hơn gợi ý.
+        guard !isLargeDocument else {
+            hideSuggestion()
+            return
+        }
         // Check if autocomplete is enabled
         guard autocompleteEnabled else {
             hideSuggestion()

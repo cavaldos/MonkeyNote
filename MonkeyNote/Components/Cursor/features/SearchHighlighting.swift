@@ -36,8 +36,14 @@ extension CursorTextView {
         
         // Document may have been edited since last search (same query, stale
         // NSRanges) — didChangeText() marks isSearchComplete = false in that case.
+        // File lớn: gõ mỗi phím mà search lại cả doc thì lag → tối đa 1 lần/s,
+        // giữa các lần giữ highlights cũ, chỉ update viewport.
         let needsResearch = !isSearchComplete
         if needsResearch {
+            if isLargeDocument, Date().timeIntervalSince(lastFullSearchTime) < 1.0 {
+                updateVisibleHighlights()
+                return
+            }
             performFullSearch(query: query, in: text)
         }
 
@@ -75,6 +81,7 @@ extension CursorTextView {
         // Copy to searchMatchRanges for navigation
         searchMatchRanges = allMatchRanges
         isSearchComplete = true
+        lastFullSearchTime = Date()
         
         // Notify with final count
         onSearchMatchesChanged?(allMatchRanges.count, true)
