@@ -668,6 +668,8 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             textView.setSelectedRange(NSRange(location: safeLocation, length: safeLength))
             // Nội dung đổi ngầm (replace/đổi note/undo ngoài) -> ranges cũ sai lệch
             textView.isSearchComplete = false
+            // Set trực tiếp bypass NSText.didChangeNotification -> báo ruler rebuild cache
+            context.coordinator.rulerView?.invalidateCache()
             // set string xóa attributes -> phủ lại spacing 1 lần
             if let ts = textView.textStorage, ts.length > 0 {
                 ts.addAttribute(.paragraphStyle, value: paragraphStyle(fontSize: fontSize), range: NSRange(location: 0, length: ts.length))
@@ -744,9 +746,10 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     private func updateRulerView(scrollView: NSScrollView, context: Context, font: NSFont) {
         if showLineNumbers {
             if let rulerView = context.coordinator.rulerView {
+                // updateColors/updateFont tự guard khi không đổi — không needsDisplay vô điều kiện
+                // để tránh redraw ruler mỗi SwiftUI update.
                 rulerView.updateColors(isDarkMode: isDarkMode)
                 rulerView.updateFont(font)
-                rulerView.needsDisplay = true
             } else {
                 guard let textView = scrollView.documentView as? CursorTextView else { return }
                 let rulerView = LineNumberRulerView(textView: textView, scrollView: scrollView)
@@ -822,14 +825,20 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             
-            // Calculate and report cursor line with a single allocation-free
-            // pass over UTF-16 (selectedRange is UTF-16 based; no String copy,
-            // no components array).
-            let text = textView.string
-            let cursorPosition = min(textView.selectedRange().location, text.utf16.count)
-            var cursorLine = 1
-            for unit in text.utf16.prefix(cursorPosition) where unit == 0xA {
-                cursorLine += 1
+            // Dùng chung cache với ruler (O(log N)) thay vì scan prefix O(cursor)
+            // mỗi keystroke — StatusBar và ruler highlight cùng 1 kết quả.
+            let cursorPosition = textView.selectedRange().location
+            let cursorLine: Int
+            if let rulerView = rulerView {
+                cursorLine = rulerView.lineNumber(forLocation: cursorPosition)
+            } else {
+                let text = textView.string
+                let clamped = min(cursorPosition, text.utf16.count)
+                var line = 1
+                for unit in text.utf16.prefix(clamped) where unit == 0xA {
+                    line += 1
+                }
+                cursorLine = line
             }
             parent.onCursorLineChanged?(cursorLine)
         }

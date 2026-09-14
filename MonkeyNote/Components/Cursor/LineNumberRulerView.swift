@@ -19,6 +19,14 @@ class LineNumberRulerView: NSRulerView {
     
     // Current line tracking
     private var currentLine: Int = 1
+
+    // Cached line-start offsets (UTF-16, matches NSTextView.selectedRange).
+    // Rebuilt only on text change — scroll/selection/draw reuse it.
+    private var cachedLineStarts: [Int]?
+    private var cachedTextLength: Int = -1
+    private var isCacheDirty: Bool = true
+    private var lastDarkMode: Bool?
+    private var lastFontSize: CGFloat = 0
     
     // Gutter width tracks the digit count: narrow by default, grows past 99 lines.
     static let emptyWidth: CGFloat = 18
@@ -82,6 +90,9 @@ class LineNumberRulerView: NSRulerView {
     // MARK: - Configuration
     
     func updateColors(isDarkMode: Bool) {
+        // Guard: updateNSView calls this on every SwiftUI update — skip redraw if unchanged.
+        if lastDarkMode == isDarkMode { return }
+        lastDarkMode = isDarkMode
         lineNumberColor = isDarkMode
             ? NSColor.gray.withAlphaComponent(0.5)
             : NSColor.gray.withAlphaComponent(0.6)
@@ -92,14 +103,52 @@ class LineNumberRulerView: NSRulerView {
     }
     
     func updateFont(_ newFont: NSFont) {
+        if lastFontSize == newFont.pointSize { return }
+        lastFontSize = newFont.pointSize
         // Use monospaced digits for consistent alignment
         font = NSFont.monospacedDigitSystemFont(ofSize: newFont.pointSize * 0.75, weight: .regular)
         needsDisplay = true
+    }
+
+    /// Called when text is set programmatically (bypasses NSText.didChangeNotification).
+    func invalidateCache() {
+        isCacheDirty = true
+        needsDisplay = true
+    }
+
+    /// Shared helper: O(log N) line number for a UTF-16 location. Used by both
+    /// the ruler highlight and Coordinator.textViewDidChangeSelection (StatusBar),
+    /// so each keystroke computes the line once instead of twice.
+    func lineNumber(forLocation location: Int) -> Int {
+        guard let textView = textView else { return 1 }
+        let text = textView.string
+        if text.isEmpty { return 1 }
+        let starts = ensureLineStarts(for: text)
+        let clamped = max(0, min(location, cachedTextLength))
+        return Self.lineNumber(at: clamped, in: starts)
+    }
+
+    static func lineNumber(at location: Int, in lineStarts: [Int]) -> Int {
+        // Rightmost start <= location (binary search).
+        var lo = 0
+        var hi = lineStarts.count - 1
+        var result = 1
+        while lo <= hi {
+            let mid = (lo + hi) >> 1
+            if lineStarts[mid] <= location {
+                result = mid + 1
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
+        }
+        return result
     }
     
     // MARK: - Notifications
     
     @objc private func textDidChange(_ notification: Notification) {
+        isCacheDirty = true
         needsDisplay = true
     }
     
@@ -113,35 +162,37 @@ class LineNumberRulerView: NSRulerView {
     }
     
     // MARK: - Line Calculation
+
+    /// Single UTF-16 pass counting \n — same convention as Coordinator +
+    /// ContentViewModel stats. O(N) once per edit, reused by every draw/scroll/selection.
+    private func ensureLineStarts(for text: String) -> [Int] {
+        let utf16Count = text.utf16.count
+        if !isCacheDirty, let cached = cachedLineStarts, utf16Count == cachedTextLength {
+            return cached
+        }
+        var starts: [Int] = [0]
+        starts.reserveCapacity(max(16, utf16Count / 40))
+        var offset = 0
+        for unit in text.utf16 {
+            if unit == 0xA {
+                starts.append(offset + 1)
+            }
+            offset += 1
+        }
+        cachedLineStarts = starts
+        cachedTextLength = utf16Count
+        isCacheDirty = false
+        return starts
+    }
     
     private func updateCurrentLine() {
         guard let textView = textView else { return }
-        
-        let selectedRange = textView.selectedRange()
-        let text = textView.string as NSString
-        
-        if text.length == 0 {
+        if textView.string.isEmpty {
             currentLine = 1
             return
         }
-        
-        // Get cursor position and use NSString.lineRange to determine line number
-        // This leverages Apple's optimized implementation instead of manual iteration
-        let cursorPos = min(selectedRange.location, text.length)
-        
-        // Use lineRange which internally uses optimized algorithms
-        let lineRange = text.lineRange(for: NSRange(location: cursorPos, length: 0))
-        
-        // Count lines by iterating through line ranges (much faster than character-by-character)
-        var lineNumber = 1
-        var searchPos = 0
-        while searchPos < lineRange.location {
-            let currentLineRange = text.lineRange(for: NSRange(location: searchPos, length: 0))
-            lineNumber += 1
-            searchPos = NSMaxRange(currentLineRange)
-            if searchPos == currentLineRange.location { break } // Safety check
-        }
-        currentLine = lineNumber
+        let cursorPos = textView.selectedRange().location
+        currentLine = lineNumber(forLocation: cursorPos)
     }
     
     // MARK: - Drawing
@@ -160,38 +211,26 @@ class LineNumberRulerView: NSRulerView {
               let layoutManager = textView.layoutManager,
               let textContainer = textView.textContainer else { return }
         
-        let text = textView.string as NSString
+        let text = textView.string
         let visibleRect = textView.visibleRect
         let textInset = textView.textContainerInset
         
-        // Update current line for selection highlight
+        // Update current line for selection highlight (O(log N) via cache)
         updateCurrentLine()
         
         // Handle empty document
-        if text.length == 0 {
+        if text.isEmpty {
             let yPosition = textInset.height - visibleRect.origin.y + verticalOffset
             drawLineNumber(1, at: yPosition, isCurrentLine: true)
             return
         }
         
-        // Ensure layout is complete
-        layoutManager.ensureLayout(for: textContainer)
-        
-        // Build a map of character index -> line number
-        var lineStarts: [Int] = [0] // Line 1 starts at character 0
-        var searchIndex = 0
-        while searchIndex < text.length {
-            let lineRange = text.lineRange(for: NSRange(location: searchIndex, length: 0))
-            let nextLineStart = NSMaxRange(lineRange)
-            if nextLineStart > searchIndex && nextLineStart <= text.length {
-                lineStarts.append(nextLineStart)
-            }
-            searchIndex = nextLineStart
-            if searchIndex == lineRange.location { break }
-        }
+        // Cached line starts — built once per edit, reused on scroll/selection.
+        let lineStarts = ensureLineStarts(for: text)
+        let totalLines = lineStarts.count
 
         // Fit the gutter to the digit count (converges after one extra draw).
-        let digits = String(lineStarts.count).count
+        let digits = String(totalLines).count
         let digitWidth = ("8" as NSString).size(withAttributes: [.font: font]).width
         let fitted = max(Self.emptyWidth, ceil(CGFloat(digits) * digitWidth + rightPadding + 2))
         if abs(fitted - rulerWidth) > 0.5 {
@@ -199,57 +238,52 @@ class LineNumberRulerView: NSRulerView {
             ruleThickness = fitted
         }
         
-        // Get the full glyph range
-        let fullGlyphRange = layoutManager.glyphRange(for: textContainer)
-        guard fullGlyphRange.length > 0 else { return }
+        // Viewport-only: never touch layout outside the visible rect.
+        // Same pattern as SearchHighlighting.updateVisibleHighlights.
+        var visibleGlyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+        if visibleGlyphRange.length == 0 {
+            return
+        }
+        let visibleCharRange = layoutManager.characterRange(forGlyphRange: visibleGlyphRange, actualGlyphRange: nil)
+        // Ensure layout only for what we are about to draw.
+        layoutManager.ensureLayout(forCharacterRange: visibleCharRange)
+        // Re-resolve after layout settled (range is stable, but cheap insurance).
+        visibleGlyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+        guard visibleGlyphRange.length > 0 else { return }
         
         // Track which lines we've drawn to avoid duplicates (for wrapped lines)
         var drawnLines = Set<Int>()
+        drawnLines.reserveCapacity(64)
         
-        // Use enumerateLineFragments to iterate through all line fragments
-        layoutManager.enumerateLineFragments(forGlyphRange: fullGlyphRange) { (lineRect, usedRect, container, glyphRange, stop) in
+        // Enumerate only visible fragments (~50) instead of the whole file (~5000).
+        layoutManager.enumerateLineFragments(forGlyphRange: visibleGlyphRange) { (lineRect, usedRect, container, glyphRange, stop) in
             // Convert glyph range to character range
             let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
             
-            // Find the line number for this character position
-            var lineNumber = 1
-            for (index, startPos) in lineStarts.enumerated() {
-                if charRange.location >= startPos {
-                    lineNumber = index + 1
-                } else {
-                    break
-                }
-            }
+            // Binary search: O(log N) per visible fragment.
+            let lineNumber = Self.lineNumber(at: charRange.location, in: lineStarts)
             
             // Skip if we've already drawn this line (handles soft-wrapped lines)
             if drawnLines.contains(lineNumber) {
                 return
             }
+            drawnLines.insert(lineNumber)
             
-            // Calculate Y position in ruler coordinates
-            // lineRect.origin.y is in text container coordinates
-            // Add textInset to get text view coordinates
-            // Subtract visibleRect.origin.y to get visible/ruler coordinates
+            // lineRect.origin.y is in text container coordinates.
             let yInTextView = lineRect.origin.y + textInset.height
             let yInRuler = yInTextView - visibleRect.origin.y + self.verticalOffset
             
-            // Only draw if visible (with some padding)
-            let rulerHeight = self.bounds.height
-            if yInRuler >= -30 && yInRuler <= rulerHeight + 30 {
-                drawnLines.insert(lineNumber)
-                let isCurrentLine = lineNumber == self.currentLine
-                self.drawLineNumber(lineNumber, at: yInRuler, isCurrentLine: isCurrentLine)
-            }
+            let isCurrentLine = lineNumber == self.currentLine
+            self.drawLineNumber(lineNumber, at: yInRuler, isCurrentLine: isCurrentLine)
         }
         
-        // Handle trailing newline - if text ends with \n, add one more line number
-        if text.length > 0 && text.character(at: text.length - 1) == UInt16(0x0A) { // 0x0A is newline
-            // The last line number is lineStarts.count (not +1)
-            // because lineStarts already contains the start position of the empty last line
-            let lastLineNumber = lineStarts.count
-            if !drawnLines.contains(lastLineNumber) {
-                // Get the rect after the last character
-                let lastGlyphIndex = layoutManager.glyphIndexForCharacter(at: text.length - 1)
+        // Trailing newline: text ending in \n has an empty last line with no fragment.
+        // Only pay for its layout when the end of the document is actually visible.
+        if text.utf16.last == 0x0A {
+            let lastLineNumber = totalLines
+            if !drawnLines.contains(lastLineNumber),
+               NSMaxRange(visibleCharRange) >= cachedTextLength - 1 {
+                let lastGlyphIndex = layoutManager.glyphIndexForCharacter(at: cachedTextLength - 1)
                 let lastLineRect = layoutManager.lineFragmentRect(forGlyphAt: lastGlyphIndex, effectiveRange: nil)
                 let yInTextView = lastLineRect.origin.y + lastLineRect.height + textInset.height
                 let yInRuler = yInTextView - visibleRect.origin.y + verticalOffset
