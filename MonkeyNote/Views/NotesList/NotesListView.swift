@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 struct NotesListView: View {
     @Environment(ContentViewModel.self) var viewModel
@@ -50,6 +53,9 @@ struct NotesListView: View {
                     }
                 }
                 .scrollContentBackground(.hidden)
+                #if os(macOS)
+                .background(ListScrollerConfig())
+                #endif
                 .clipped()
                 .id(viewModel.searchText)
             } else {
@@ -217,3 +223,42 @@ struct NotesListView: View {
         .help("Sort notes")
     }
 }
+
+#if os(macOS)
+// Gắn ClearTrackScroller cho NSScrollView đứng sau SwiftUI List — bỏ nền slot, giữ knob nổi.
+struct ListScrollerConfig: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView(frame: .zero)
+        applySoon(from: v)
+        return v
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        applySoon(from: nsView)
+    }
+    private func applySoon(from v: NSView, attempt: Int = 0) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            guard let root = v.window?.contentView else {
+                if attempt < 5 { applySoon(from: v, attempt: attempt + 1) }
+                return
+            }
+            for sv in allScrollViews(in: root) {
+                guard sv.documentView is NSTableView,
+                      !(sv.verticalScroller is ClearTrackScroller) else { continue }
+                sv.scrollerStyle = .overlay
+                sv.autohidesScrollers = true
+                let sc = ClearTrackScroller()
+                sc.scrollerStyle = .overlay
+                sv.verticalScroller = sc
+            }
+        }
+    }
+    private func allScrollViews(in v: NSView) -> [NSScrollView] {
+        var out: [NSScrollView] = []
+        for sub in v.subviews {
+            if let sv = sub as? NSScrollView { out.append(sv) }
+            out += allScrollViews(in: sub)
+        }
+        return out
+    }
+}
+#endif

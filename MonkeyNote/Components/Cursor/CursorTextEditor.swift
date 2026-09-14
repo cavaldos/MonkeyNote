@@ -425,6 +425,23 @@ class CursorTextView: NSTextView {
 
 // MARK: - ThickCursorTextEditor (NSViewRepresentable)
 
+// Scroller không vẽ nền slot, knob vẽ tay mỏng mờ.
+final class ClearTrackScroller: NSScroller {
+    override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {}
+    override func drawKnob() {
+        let slot = rect(for: .knob)
+        guard !slot.isEmpty, slot.width > 0, slot.height > 0 else { return }
+        let w: CGFloat = 5
+        let r = NSRect(x: slot.midX - w / 2, y: slot.minY + 1,
+                       width: w, height: max(slot.height - 2, w))
+        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let c = dark ? NSColor.white.withAlphaComponent(0.3)
+                     : NSColor.black.withAlphaComponent(0.25)
+        c.setFill()
+        NSBezierPath(roundedRect: r, xRadius: w / 2, yRadius: w / 2).fill()
+    }
+}
+
 struct ThickCursorTextEditor: NSViewRepresentable {
     @Binding var text: String
     var isDarkMode: Bool
@@ -460,11 +477,18 @@ struct ThickCursorTextEditor: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
+        scrollView.scrollerStyle = .overlay
+        scrollView.autohidesScrollers = true
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
+        scrollView.backgroundColor = .clear
         scrollView.drawsBackground = false
+        scrollView.contentView.drawsBackground = false
+        scrollView.contentView.backgroundColor = .clear
+        let vScroller = ClearTrackScroller()
+        vScroller.scrollerStyle = .overlay
+        scrollView.verticalScroller = vScroller
 
         let layoutManager = CursorLayoutManager()
         layoutManager.cursorWidth = cursorWidth
@@ -496,6 +520,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.allowsUndo = true
         textView.isEditable = true
         textView.isSelectable = true
+        textView.backgroundColor = .clear
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: horizontalPadding, height: 0)
         
