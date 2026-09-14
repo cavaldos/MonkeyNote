@@ -53,8 +53,9 @@ class CursorTextView: NSTextView {
     var autocompleteOpacity: Double = 0.5
     var suggestionMode: String = "word"  // "word" or "sentence"
     
-    // Autocomplete ghost text
-    var ghostTextLayer: CATextLayer?
+    // Autocomplete inline ghost (preview chars in storage push right-side text)
+    var ghostRange: NSRange?
+    var isApplyingGhost = false
     var currentSuggestion: String?
     var suggestionWordStart: Int = 0
     var suggestionTask: Task<Void, Never>?
@@ -187,6 +188,7 @@ class CursorTextView: NSTextView {
     override func resignFirstResponder() -> Bool {
         let didResign = super.resignFirstResponder()
         if didResign {
+            hideSuggestion()
             stopBlinkTimer()
             cursorLayer?.removeAnimation(forKey: "caretBlink")
             cursorLayer?.removeAnimation(forKey: "caretSlide")
@@ -253,13 +255,15 @@ class CursorTextView: NSTextView {
         
         // Handle Shift + Enter - soft line break (continue same list item)
         if event.keyCode == 36 && event.modifierFlags.contains(.shift) {
+            discardGhostBeforeEdit()
             if handleShiftEnter() {
                 return
             }
         }
-        
+
         // Handle Enter for list continuation
         if event.keyCode == 36 {
+            discardGhostBeforeEdit()
             if handleEnterKey() {
                 return
             }
@@ -273,6 +277,10 @@ class CursorTextView: NSTextView {
             super.insertText(insertString, replacementRange: replacementRange)
             return
         }
+
+        // Inline ghost is preview chars in storage — strip before any real
+        // edit so its range never goes stale while layout shifts.
+        discardGhostBeforeEdit()
         
         // If slash command menu is visible, update filter with typed character
         if slashCommandController.isVisible {
@@ -334,7 +342,16 @@ class CursorTextView: NSTextView {
         handleSlashAtLineStart(str)
     }
     
+    override func replaceCharacters(in range: NSRange, with str: String) {
+        // Funnel for paste/formatting/bullet/slash edits — strip ghost first.
+        if !isApplyingGhost {
+            discardGhostBeforeEdit()
+        }
+        super.replaceCharacters(in: range, with: str)
+    }
+
     override func deleteBackward(_ sender: Any?) {
+        discardGhostBeforeEdit()
         // Snapshot vùng sắp mất TRƯỚC khi xóa — sau super chữ đã đi rồi,
         // chụp lúc đó chỉ được nền trống nên mất fade.
         var doomedImage: CGImage?
@@ -463,6 +480,8 @@ class CursorTextView: NSTextView {
     }
 
     override func didChangeText() {
+        // Ghost preview edits must not touch search state or notifications.
+        guard !isApplyingGhost else { return }
         super.didChangeText()
         // Document edited (type/delete/paste/undo) while search is active:
         // cached NSRanges are stale -> force re-search on next updateHighlights().
@@ -660,7 +679,10 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? CursorTextView else { return }
 
-        if textView.string != text {
+        // Compare ghost-free so an idle preview never triggers a reset loop.
+        let realString = textView.stringWithoutGhost()
+        if realString != text {
+            textView.discardGhostBeforeEdit()
             let selectedRange = textView.selectedRange()
             textView.string = text
             let safeLocation = min(selectedRange.location, text.utf16.count)
@@ -819,6 +841,11 @@ struct ThickCursorTextEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+            // Inline ghost preview lives in storage — never leak it into the document binding.
+            if let cursorView = textView as? CursorTextView,
+               cursorView.isApplyingGhost || cursorView.ghostRange != nil {
+                return
+            }
             parent.text = textView.string
         }
         

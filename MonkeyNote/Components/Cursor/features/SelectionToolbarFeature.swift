@@ -12,6 +12,8 @@ import AppKit
 extension CursorTextView {
     
     func handleSelectionChange() {
+        // Programmatic caret parking during ghost show/hide is not a user move.
+        guard !isApplyingGhost else { return }
         let selectedRange = self.selectedRange()
         
         // Hide autocomplete suggestion when cursor moves
