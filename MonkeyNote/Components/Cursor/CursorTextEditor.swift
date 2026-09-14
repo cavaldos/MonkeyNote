@@ -113,6 +113,10 @@ class CursorTextView: NSTextView {
     
     // Flag to track if selection is from search navigation
     var isNavigatingSearch: Bool = false
+
+    // Pending todo toggle (click vs drag-select disambiguation)
+    var pendingTodoCharIndex: Int?
+    var pendingTodoDownPoint: NSPoint = .zero
     
     // MARK: - Lifecycle
     
@@ -131,6 +135,14 @@ class CursorTextView: NSTextView {
     }
 
     override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
+        // Native behavior (Apple Notes): no caret while a selection is active.
+        // Without this the thick caret layer stays stuck at the anchor point
+        // while the blue selection grows elsewhere.
+        if selectedRange().length > 0 {
+            hideCaretLayer()
+            lastCursorRect = .zero
+            return
+        }
         // We handle blinking ourselves with the timer, so ignore the flag parameter
         var thickRect = rect
         thickRect.size.width = cursorWidth
@@ -384,14 +396,52 @@ class CursorTextView: NSTextView {
     
     override func setSelectedRange(_ charRange: NSRange) {
         super.setSelectedRange(charRange)
+        updateCaretVisibilityForSelection()
         handleSelectionChange()
     }
     
     override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {
         super.setSelectedRange(charRange, affinity: affinity, stillSelecting: stillSelectingFlag)
+        // Hide the thick caret for the whole drag (stillSelecting=true) so it
+        // never sits at the anchor; on release the next drawInsertionPoint
+        // (or the collapsed branch below) parks it at the active end.
+        updateCaretVisibilityForSelection()
         if !stillSelectingFlag {
             handleSelectionChange()
         }
+    }
+
+    /// Apple Notes parity: caret visible only for a collapsed selection.
+    /// Non-empty selection -> hide layer + kill blink/slide anims.
+    /// Collapsed -> resume blink; force a redraw so the caret reappears at
+    /// the active end instead of the stale anchor rect.
+    func updateCaretVisibilityForSelection() {
+        guard cursorLayer != nil else { return }
+        if selectedRange().length > 0 {
+            hideCaretLayer()
+        } else if window?.firstResponder == self {
+            cursorVisible = true
+            setCaretOpacity(1, animated: false)
+            if cursorBlinkEnabled {
+                if let timer = blinkTimer, timer.isValid {
+                    timer.fireDate = Date().addingTimeInterval(Self.caretBlinkPause)
+                } else {
+                    startBlinkTimer()
+                }
+            }
+            lastCursorRect = .zero
+            needsDisplay = true
+        }
+    }
+
+    func hideCaretLayer() {
+        guard let layer = cursorLayer else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.removeAnimation(forKey: "caretBlink")
+        layer.removeAnimation(forKey: "caretSlide")
+        layer.opacity = 0
+        CATransaction.commit()
     }
     
     // MARK: - Link Handling
@@ -420,27 +470,52 @@ class CursorTextView: NSTextView {
     
     // Prevent default link behavior that causes errors
     override func mouseDown(with event: NSEvent) {
+        pendingTodoCharIndex = nil
         let point = convert(event.locationInWindow, from: nil)
         let charIndex = characterIndexForInsertion(at: point)
-        
-        // Check if clicked on a todo checkbox
-        if charIndex < textStorage?.length ?? 0,
-           let attrs = textStorage?.attributes(at: charIndex, effectiveRange: nil) {
-            if attrs[NSAttributedString.Key("todoUnchecked")] != nil || attrs[NSAttributedString.Key("todoChecked")] != nil {
-                toggleTodoAtCharIndex(charIndex)
-                return
-            }
-        }
-        
-        // Check if clicked on a link
-        if charIndex < textStorage?.length ?? 0,
+
+        // Link: only hijack Cmd+click (macOS convention). Plain press/drag
+        // falls through to super so link text stays selectable in all directions.
+        if event.modifierFlags.contains(.command),
+           charIndex < textStorage?.length ?? 0,
            let attrs = textStorage?.attributes(at: charIndex, effectiveRange: nil),
            let link = attrs[.link] {
             clicked(onLink: link, at: charIndex)
             return
         }
-        
+
+        // Todo: record a pending toggle but still call super, so a drag
+        // starting on the checkbox extends the selection instead of being eaten.
+        // The toggle fires on mouseUp only for a true click.
+        if event.clickCount == 1,
+           !event.modifierFlags.contains(.shift),
+           !event.modifierFlags.contains(.command),
+           charIndex < textStorage?.length ?? 0,
+           let attrs = textStorage?.attributes(at: charIndex, effectiveRange: nil),
+           attrs[NSAttributedString.Key("todoUnchecked")] != nil || attrs[NSAttributedString.Key("todoChecked")] != nil {
+            pendingTodoCharIndex = charIndex
+            pendingTodoDownPoint = point
+        }
+
         super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        defer { pendingTodoCharIndex = nil }
+        guard pendingTodoCharIndex != nil,
+              event.clickCount == 1,
+              !event.modifierFlags.contains(.shift),
+              !event.modifierFlags.contains(.command) else { return }
+        let upPoint = convert(event.locationInWindow, from: nil)
+        // Dragged, not clicked -> it was a selection gesture, keep selection.
+        guard hypot(upPoint.x - pendingTodoDownPoint.x, upPoint.y - pendingTodoDownPoint.y) < 4 else { return }
+        let upIndex = characterIndexForInsertion(at: upPoint)
+        // Must still be on a todo box (same line is enough — the glyph shifts).
+        guard upIndex < (textStorage?.length ?? 0),
+              let attrs = textStorage?.attributes(at: upIndex, effectiveRange: nil),
+              attrs[NSAttributedString.Key("todoUnchecked")] != nil || attrs[NSAttributedString.Key("todoChecked")] != nil else { return }
+        toggleTodoAtCharIndex(upIndex)
     }
     
     // MARK: - Todo Toggle
@@ -496,6 +571,13 @@ class CursorTextView: NSTextView {
     
     // Override to prevent flickering when scrolling to cursor
     override func scrollRangeToVisible(_ range: NSRange) {
+        // Drag-select autoscroll: AppKit calls this continuously while the
+        // mouse is down. Never throttle here or the selection can't grow
+        // in all directions (up/down past the viewport).
+        if NSEvent.pressedMouseButtons != 0 {
+            super.scrollRangeToVisible(range)
+            return
+        }
         // Prevent multiple rapid scroll calls that cause flickering
         guard !isScrolling else { return }
         

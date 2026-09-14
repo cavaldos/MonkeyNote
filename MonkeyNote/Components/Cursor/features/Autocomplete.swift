@@ -48,9 +48,11 @@ extension CursorTextView {
         undoManager?.disableUndoRegistration()
         ts.deleteCharacters(in: range)
         undoManager?.enableUndoRegistration()
-        // Caret was parked at ghost start; clamp it back there.
+        // Caret was parked at ghost start; clamp it back there — but only for
+        // a collapsed caret. Never collapse an active selection (mouse drag /
+        // Shift+arrows in any direction) just to drop a ghost preview.
         let cur = selectedRange()
-        if cur.location > range.location && cur.location <= range.location + range.length {
+        if cur.length == 0 && cur.location > range.location && cur.location <= range.location + range.length {
             setSelectedRange(NSRange(location: range.location, length: 0))
         }
         isApplyingGhost = false

@@ -42,6 +42,11 @@ extension CursorTextView {
     func startBlinkTimer() {
         stopBlinkTimer()
         guard cursorBlinkEnabled else { return }
+        // Selection active -> keep thick caret hidden (it lives at the anchor).
+        if selectedRange().length > 0 {
+            hideCaretLayer()
+            return
+        }
 
         cursorVisible = true
         setCaretOpacity(1, animated: false)
@@ -49,6 +54,11 @@ extension CursorTextView {
         // (event tracking). Add vào .common để blink đều, không dồn burst gây giật.
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self else { return }
+            // A running timer must not resurrect the anchor caret mid-selection.
+            if self.selectedRange().length > 0 {
+                self.hideCaretLayer()
+                return
+            }
             self.cursorVisible.toggle()
             self.setCaretOpacity(self.cursorVisible ? 1 : 0, animated: true)
         }
@@ -62,6 +72,11 @@ extension CursorTextView {
     }
 
     func resetBlinkTimer() {
+        // Don't resurrect the anchor caret in the middle of a selection.
+        if selectedRange().length > 0 {
+            hideCaretLayer()
+            return
+        }
         // Reset the blink cycle - show cursor and restart timer.
         // Reuse the timer via fireDate: recreating a Timer on every cursor
         // move (i.e. every keystroke) costs a runloop add/remove each time.
