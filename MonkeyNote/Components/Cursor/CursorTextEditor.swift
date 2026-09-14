@@ -72,6 +72,12 @@ class CursorTextView: NSTextView {
     // MARK: - Layer Properties
     var cursorLayer: CALayer?
     var lastCursorRect: NSRect = .zero
+    var lastCaretMoveTime: TimeInterval = 0
+    var smoothCaretDt: TimeInterval = 0
+    var smoothCaretDist: CGFloat = 0
+    var editFadeIdle: [CALayer] = []
+    var editFadeLayers: [CALayer] = []
+    var editFlashLayer: CALayer?
     var highlightLayers: [CALayer] = []
     var currentMatchLayers: [CALayer] = []  // Track current match layers for shake animation
     
@@ -185,6 +191,11 @@ class CursorTextView: NSTextView {
             cursorLayer?.removeAnimation(forKey: "caretBlink")
             cursorLayer?.removeAnimation(forKey: "caretSlide")
             cursorLayer?.opacity = 0
+            editFlashLayer?.removeFromSuperlayer()
+            editFlashLayer = nil
+            for l in editFadeLayers { l.removeFromSuperlayer() }
+            editFadeLayers.removeAll()
+            editFadeIdle.removeAll()
         }
         return didResign
     }
@@ -280,8 +291,31 @@ class CursorTextView: NSTextView {
             return
         }
         
+        // TRƯỚC super: chụp nền nơi chữ sắp hiện để làm màn reveal —
+        // sau super chữ đã vào rồi, chụp lúc đó không còn nền nữa.
+        // Chỉ gõ nối cuối dòng, chuỗi ngắn, không xuống dòng, không IME.
+        let preSel = selectedRange()
+        let coverPlan: (CGImage, NSRect)? =
+            (replacementRange.length == 0 && preSel.length == 0
+             && str.utf16.count <= 4 && !hasMarkedText()
+             && str.rangeOfCharacter(from: .newlines) == nil)
+            ? planInsertCover(str, at: preSel.location) : nil
+
         super.insertText(insertString, replacementRange: replacementRange)
-        
+
+        if let plan = coverPlan {
+            showInsertCover(plan) // chữ mờ dần vào cùng nhịp caret
+        } else if str.rangeOfCharacter(from: .newlines) == nil {
+            // Bỏ qua \n: rect của ký tự xuống dòng rộng full-line,
+            // highlight sẽ thành vệt dài như ảnh. Paste nhiều dòng cũng vậy.
+            // Giữa dòng/paste 1 dòng/IME: chớp highlight sau chữ mới
+            let endLoc = selectedRange().location
+            let insLen = str.utf16.count
+            if insLen > 0, endLoc >= insLen {
+                flashInsertedCharacters(in: NSRange(location: endLoc - insLen, length: insLen))
+            }
+        }
+
         // Update autocomplete suggestion
         // Hide suggestion if space or punctuation is typed
         if str.rangeOfCharacter(from: CharacterSet.alphanumerics) == nil {
@@ -301,7 +335,31 @@ class CursorTextView: NSTextView {
     }
     
     override func deleteBackward(_ sender: Any?) {
+        // Snapshot vùng sắp mất TRƯỚC khi xóa — sau super chữ đã đi rồi,
+        // chụp lúc đó chỉ được nền trống nên mất fade.
+        var doomedImage: CGImage?
+        var doomedRect: NSRect?
+        let sel = selectedRange()
+        let ns = string as NSString
+        let target: NSRange?
+        if sel.length > 0 {
+            let loc = min(sel.location, ns.length)
+            let len = min(sel.length, ns.length - loc)
+            target = len > 0 ? NSRange(location: loc, length: len) : nil
+        } else if sel.location > 0, sel.location <= ns.length {
+            // ponytail: gộp emoji/composed char, không cắt nửa surrogate
+            target = ns.rangeOfComposedCharacterSequence(at: sel.location - 1)
+        } else {
+            target = nil
+        }
+        if let r = target, let rect = rectForCharacterRange(r) {
+            doomedRect = rect
+            doomedImage = snapshotExcludingCaret(of: rect)
+        }
         super.deleteBackward(sender)
+        if let img = doomedImage, let r = doomedRect {
+            flashDeletedImage(img, at: r)
+        }
         
         // Update suggestion after deletion
         updateSuggestion()
