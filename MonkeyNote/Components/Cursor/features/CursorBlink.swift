@@ -11,31 +11,66 @@ import AppKit
 // MARK: - Cursor Blinking
 extension CursorTextView {
     
-    func startBlinkTimer() {
-        stopBlinkTimer()
-        guard cursorBlinkEnabled else { return }
-        
-        cursorVisible = true
-        blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            self.cursorVisible.toggle()
+    /// Giữ caret hiện rõ 0.8s sau mỗi phím gõ (kiểu Monkeytype), rồi mới blink tiếp.
+    static let caretBlinkPause: TimeInterval = 0.8
+    /// Fade blink mềm thay vì cắt cứng (skill: ease-out, 50-150ms).
+    static let caretBlinkFade: Double = 0.08
+
+    func setCaretOpacity(_ value: Float, animated: Bool) {
+        guard let layer = cursorLayer else { return }
+        // Đọc opacity đang thấy để fade tiếp — tránh chớp khi toggle đúng lúc slide
+        let visualOpacity = layer.presentation()?.opacity ?? layer.opacity
+        layer.removeAnimation(forKey: "caretBlink")
+        if animated && !caretReducedMotion {
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = visualOpacity
+            fade.toValue = value
+            fade.duration = Self.caretBlinkFade
+            fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            fade.isRemovedOnCompletion = true
+            fade.fillMode = .forwards
+            layer.opacity = value
+            layer.add(fade, forKey: "caretBlink")
+        } else {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            self.cursorLayer?.opacity = self.cursorVisible ? 1 : 0
+            layer.opacity = value
             CATransaction.commit()
         }
     }
-    
+
+    func startBlinkTimer() {
+        stopBlinkTimer()
+        guard cursorBlinkEnabled else { return }
+
+        cursorVisible = true
+        setCaretOpacity(1, animated: false)
+        // scheduledTimer mặc định chỉ chạy ở .default mode → khựng khi scroll/gõ
+        // (event tracking). Add vào .common để blink đều, không dồn burst gây giật.
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.cursorVisible.toggle()
+            self.setCaretOpacity(self.cursorVisible ? 1 : 0, animated: true)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        blinkTimer = timer
+    }
+
     func stopBlinkTimer() {
         blinkTimer?.invalidate()
         blinkTimer = nil
     }
-    
+
     func resetBlinkTimer() {
-        // Reset the blink cycle - show cursor and restart timer
+        // Reset the blink cycle - show cursor and restart timer.
+        // Reuse the timer via fireDate: recreating a Timer on every cursor
+        // move (i.e. every keystroke) costs a runloop add/remove each time.
         cursorVisible = true
-        cursorLayer?.opacity = 1
-        if cursorBlinkEnabled {
+        setCaretOpacity(1, animated: false)
+        guard cursorBlinkEnabled else { return }
+        if let timer = blinkTimer, timer.isValid {
+            timer.fireDate = Date().addingTimeInterval(Self.caretBlinkPause)
+        } else {
             startBlinkTimer()
         }
     }

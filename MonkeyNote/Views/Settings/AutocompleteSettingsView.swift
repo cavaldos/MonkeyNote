@@ -9,12 +9,13 @@ import SwiftUI
 
 struct AutocompleteSettingsView: View {
     @AppStorage("note.autocompleteEnabled") private var autocompleteEnabled: Bool = true
-    @AppStorage("note.autocompleteDelay") private var autocompleteDelay: Double = 0.05
+    @AppStorage("note.autocompleteDelay") private var autocompleteDelay: Double = 0.3
     @AppStorage("note.autocompleteOpacity") private var autocompleteOpacity: Double = 0.5
     @AppStorage("note.useSystemDictionary") private var useSystemDictionary: Bool = true
     @AppStorage("note.dictionaryLanguage") private var dictionaryLanguage: String = "en"
     @AppStorage("note.minWordLength") private var minWordLength: Int = 4
     @AppStorage("note.suggestionMode") private var suggestionMode: String = "word"
+    @AppStorage("note.spellcheckEnabled") private var spellcheckEnabled: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -75,6 +76,9 @@ struct AutocompleteSettingsView: View {
                                     .onChange(of: dictionaryLanguage) { _, newValue in
                                         WordSuggestionManager.shared.setDictionaryLanguage(newValue)
                                     }
+                                    Text("Shared with spellcheck below.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
                                 .padding(.top, 8)
                             }
@@ -165,11 +169,20 @@ struct AutocompleteSettingsView: View {
                     }
                 }
 
+                SettingsSection("Spellcheck") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Check spelling as you type", isOn: $spellcheckEnabled)
+                        Text("Misspelled words are underlined using the System Dictionary language above. Right-click a word for corrections.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 SettingsSection("Timing") {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Suggestion Delay: \(Int(autocompleteDelay * 1000))ms")
                             .font(.subheadline)
-                        Slider(value: $autocompleteDelay, in: 0...3.0, step: 0.2)
+                        Slider(value: $autocompleteDelay, in: 0...3.0, step: 0.1)
                             .frame(maxWidth: 250)
                         Text("How long to wait before showing suggestions")
                             .font(.caption)

@@ -21,6 +21,7 @@ class CursorTextView: NSTextView {
                     startBlinkTimer()
                 } else {
                     stopBlinkTimer()
+                    cursorLayer?.removeAnimation(forKey: "caretBlink")
                     cursorLayer?.opacity = 1
                 }
             }
@@ -131,32 +132,40 @@ class CursorTextView: NSTextView {
             let layer = CALayer()
             layer.cornerRadius = cursorWidth / 2
             layer.backgroundColor = color.cgColor
+            layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            // Chặn implicit animation — position do animateCaretLayer điều khiển explicit,
+            // còn lại set cứng (skill: chỉ animate transform/opacity).
+            layer.actions = [
+                "position": NSNull(),
+                "bounds": NSNull(),
+                "backgroundColor": NSNull(),
+                "cornerRadius": NSNull(),
+                "opacity": NSNull()
+            ]
             wantsLayer = true
             self.layer?.addSublayer(layer)
             cursorLayer = layer
-            
+
             // Start blink timer when cursor layer is created
             if cursorBlinkEnabled {
                 startBlinkTimer()
             }
         }
 
-        cursorLayer?.backgroundColor = color.cgColor
-        cursorLayer?.cornerRadius = cursorWidth / 2
+        // Chỉ set màu/góc khi đổi — tránh implicit animation lẫn vào lúc slide
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if cursorLayer?.backgroundColor != color.cgColor {
+            cursorLayer?.backgroundColor = color.cgColor
+        }
+        let radius = cursorWidth / 2
+        if cursorLayer?.cornerRadius != radius {
+            cursorLayer?.cornerRadius = radius
+        }
+        CATransaction.commit()
 
         if lastCursorRect != thickRect {
-            if cursorAnimationEnabled {
-                CATransaction.begin()
-                CATransaction.setAnimationDuration(cursorAnimationDuration)
-                CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
-                cursorLayer?.frame = thickRect
-                CATransaction.commit()
-            } else {
-                CATransaction.begin()
-                CATransaction.setDisableActions(true)
-                cursorLayer?.frame = thickRect
-                CATransaction.commit()
-            }
+            animateCaretLayer(to: thickRect)
             lastCursorRect = thickRect
             // Reset blink when cursor moves
             resetBlinkTimer()
@@ -173,6 +182,8 @@ class CursorTextView: NSTextView {
         let didResign = super.resignFirstResponder()
         if didResign {
             stopBlinkTimer()
+            cursorLayer?.removeAnimation(forKey: "caretBlink")
+            cursorLayer?.removeAnimation(forKey: "caretSlide")
             cursorLayer?.opacity = 0
         }
         return didResign
@@ -492,8 +503,9 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.isAutomaticQuoteSubstitutionEnabled = false // disable "smart quotes"
         textView.isAutomaticDashSubstitutionEnabled = false // disable — em dash substitution
         textView.isAutomaticTextReplacementEnabled = false // disable text replacement (e.g., (c) -> ©)
-        textView.isAutomaticSpellingCorrectionEnabled = false // disable spelling correction
+        textView.isAutomaticSpellingCorrectionEnabled = false // underline only, never auto-replace
         textView.smartInsertDeleteEnabled = false // disable smart insert/delete
+        textView.applySpellcheckSettings() // underline misspelled words (language shared with autocomplete)
 
         
         // Critical settings for proper scrolling
@@ -517,7 +529,8 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             }
         }
         textView.font = font
-        
+        applyParagraphSpacing(textView, fontSize: fontSize)
+
         textView.textColor = isDarkMode
             ? NSColor.white.withAlphaComponent(0.92)
             : NSColor.black.withAlphaComponent(0.92)
@@ -546,6 +559,10 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             let safeLocation = min(selectedRange.location, text.utf16.count)
             let safeLength = min(selectedRange.length, text.utf16.count - safeLocation)
             textView.setSelectedRange(NSRange(location: safeLocation, length: safeLength))
+            // set string xóa attributes -> phủ lại spacing 1 lần
+            if let ts = textView.textStorage, ts.length > 0 {
+                ts.addAttribute(.paragraphStyle, value: paragraphStyle(fontSize: fontSize), range: NSRange(location: 0, length: ts.length))
+            }
         }
 
         textView.cursorWidth = cursorWidth
@@ -561,6 +578,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.suggestionMode = suggestionMode
         textView.doubleTapNavigationEnabled = doubleTapNavigationEnabled
         textView.doubleTapDelay = doubleTapDelay
+        textView.applySpellcheckSettings()
         if let layoutManager = textView.layoutManager as? CursorLayoutManager {
             layoutManager.cursorWidth = cursorWidth
         }
@@ -578,19 +596,19 @@ struct ThickCursorTextEditor: NSViewRepresentable {
                 font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
             }
         }
-        textView.font = font
+        if textView.font?.pointSize != font.pointSize || textView.font?.fontName != font.fontName {
+            textView.font = font
+        }
+        // Giữ spacing khi đổi font + đảm bảo dòng mới gõ tiếp vẫn thưa
+        applyParagraphSpacing(textView, fontSize: fontSize)
         
         let textColor = isDarkMode
             ? NSColor.white.withAlphaComponent(0.92)
             : NSColor.black.withAlphaComponent(0.92)
 
-        textView.textColor = textColor
-        textView.insertionPointColor = NSColor(
-            red: 222.0 / 255.0,
-            green: 99.0 / 255.0,
-            blue: 74.0 / 255.0,
-            alpha: 1.0
-        )
+        if textView.textColor != textColor {
+            textView.textColor = textColor
+        }
         
         // Check if search index changed and navigate to match
         let previousIndex = context.coordinator.lastSearchIndex
@@ -608,6 +626,28 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         } else if !textView.lastSearchQuery.isEmpty || !textView.highlightLayers.isEmpty {
             // Clear stale search layers once when search is closed
             textView.updateHighlights()
+        }
+    }
+
+    // Enter = paragraph mới -> paragraphSpacing; wrap dài tự tràn giữ nguyên (lineSpacing = 0)
+    private func paragraphStyle(fontSize: Double) -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.paragraphSpacing = round(fontSize * 0.35)
+        style.lineSpacing = 0
+        return style
+    }
+
+    private func applyParagraphSpacing(_ textView: CursorTextView, fontSize: Double) {
+        let style = paragraphStyle(fontSize: fontSize)
+        // Cheap check: chỉ phủ lại storage khi spacing đổi (tránh full-scan mỗi keystroke)
+        let current = textView.defaultParagraphStyle
+        textView.defaultParagraphStyle = style
+        var attrs = textView.typingAttributes
+        attrs[.paragraphStyle] = style
+        textView.typingAttributes = attrs
+        if current?.paragraphSpacing != style.paragraphSpacing || current?.lineSpacing != style.lineSpacing,
+           let ts = textView.textStorage, ts.length > 0 {
+            ts.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: ts.length))
         }
     }
 
@@ -647,11 +687,15 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             
-            // Calculate and report cursor line
+            // Calculate and report cursor line with a single allocation-free
+            // pass over UTF-16 (selectedRange is UTF-16 based; no String copy,
+            // no components array).
             let text = textView.string
-            let cursorPosition = textView.selectedRange().location
-            let textUpToCursor = String(text.prefix(cursorPosition))
-            let cursorLine = textUpToCursor.components(separatedBy: .newlines).count
+            let cursorPosition = min(textView.selectedRange().location, text.utf16.count)
+            var cursorLine = 1
+            for unit in text.utf16.prefix(cursorPosition) where unit == 0xA {
+                cursorLine += 1
+            }
             parent.onCursorLineChanged?(cursorLine)
         }
     }

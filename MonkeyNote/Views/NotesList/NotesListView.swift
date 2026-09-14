@@ -40,6 +40,8 @@ struct NotesListView: View {
                             viewModel.closeExternalFile()
                         }
                         
+                        // Flush pending keystroke save before leaving the note
+                        viewModel.flushPendingNoteSave()
                         vm.selectedNoteID = newValue
                     }
                 )) {

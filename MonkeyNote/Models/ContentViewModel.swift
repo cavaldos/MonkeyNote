@@ -44,6 +44,16 @@ final class ContentViewModel {
     
     // MARK: - Cursor State
     var cursorLine: Int = 1
+    
+    /// Set cursor line only when it actually changed. @Observable fires on
+    /// every set, and this is called on every selection change (i.e. every
+    /// keystroke) — without the guard each keystroke renders the whole UI
+    /// twice (once for text, once for the unchanged line number).
+    func updateCursorLine(_ line: Int) {
+        if cursorLine != line {
+            cursorLine = line
+        }
+    }
 
     // MARK: - UI State
     var showSettings: Bool = false
@@ -101,7 +111,12 @@ final class ContentViewModel {
     }
     
     var autocompleteDelay: Double {
-        get { UserDefaults.standard.double(forKey: "note.autocompleteDelay") }
+        // Unset (nil) means "never configured" — fall back to a delay that
+        // keeps typing smooth. NSSpellChecker.completions runs synchronously
+        // (~ms) on the main thread per keystroke, so near-zero delays make
+        // every keystroke block on the dictionary. An explicit 0 still means
+        // "instant" for users who want it.
+        get { UserDefaults.standard.object(forKey: "note.autocompleteDelay") as? Double ?? 0.3 }
         set { UserDefaults.standard.set(newValue, forKey: "note.autocompleteDelay") }
     }
     
@@ -146,6 +161,15 @@ final class ContentViewModel {
         }
     }
     
+    // MARK: - Debounced Save State
+    // Typing must never block on disk I/O: each keystroke only mutates memory,
+    // disk writes are debounced and run on a background queue.
+    private var pendingNoteSaveWorkItem: DispatchWorkItem?
+    private var pendingNoteSnapshot: (fileURL: URL, oldFileURL: URL?, text: String, title: String, noteID: NoteItem.ID, folderID: NoteFolder.ID)?
+    private var pendingStructureSaveWorkItem: DispatchWorkItem?
+    private var pendingExternalSaveWorkItem: DispatchWorkItem?
+    private let saveQueue = DispatchQueue(label: "MonkeyNote.save", qos: .utility)
+    
     // MARK: - Computed Properties
     
     var sortOption: NoteSortOption {
@@ -185,19 +209,66 @@ final class ContentViewModel {
         isEditingExternalFile ? externalFileText : (selectedNote?.text ?? "")
     }
     
+    // Single-pass document stats, cached by text equality (memcmp-fast).
+    // StatusBar reads wordCount/lineCount/characterCount on every render, so
+    // without the cache each keystroke scans the document 3 times.
+    private var _statsText = ""
+    private var _statsWords = 0
+    private var _statsLines = 1
+    private var _statsChars = 0
+    
+    private func refreshStatsIfNeeded() {
+        let t = activeText
+        if t == _statsText { return }
+        // UTF-16 single pass (~0.1ms for a 3000-word doc vs ~1.5ms iterating
+        // Characters). Approximation notes: non-ASCII whitespace (e.g. NBSP)
+        // counts as a word char, combining marks/ZWJ sequences count as one
+        // char per UTF-16 unit pair — fine for a status bar.
+        var w = 0, l = 1, ch = 0, inWord = false, prevCR = false
+        for u in t.utf16 {
+            if u == 0xA { // LF: line break, not a char (\r\n counts once)
+                if !prevCR { l += 1 }
+                inWord = false
+                prevCR = false
+                continue
+            }
+            if u >= 0xD800 && u < 0xDC00 { // high surrogate: char counted at low surrogate
+                prevCR = false
+                if !inWord { inWord = true; w += 1 }
+                continue
+            }
+            ch += 1
+            if u == 0xD { // CR
+                l += 1
+                inWord = false
+                prevCR = true
+            } else if u == 0x20 || u == 0x9 || u == 0xB || u == 0xC {
+                inWord = false
+                prevCR = false
+            } else {
+                prevCR = false
+                if !inWord { inWord = true; w += 1 }
+            }
+        }
+        _statsText = t
+        _statsWords = w
+        _statsLines = l
+        _statsChars = ch
+    }
+    
     var wordCount: Int {
-        activeText
-            .split(whereSeparator: { $0.isWhitespace || $0.isNewline })
-            .count
+        refreshStatsIfNeeded()
+        return _statsWords
     }
     
     var lineCount: Int {
-        guard !activeText.isEmpty else { return 1 }
-        return activeText.components(separatedBy: .newlines).count
+        refreshStatsIfNeeded()
+        return _statsLines
     }
     
     var characterCount: Int {
-        activeText.replacingOccurrences(of: "\n", with: "").count
+        refreshStatsIfNeeded()
+        return _statsChars
     }
     
     var fontDesign: Font.Design {
@@ -216,7 +287,7 @@ final class ContentViewModel {
                 get: { [weak self] in self?.externalFileText ?? "" },
                 set: { [weak self] newValue in
                     self?.externalFileText = newValue
-                    self?.saveExternalFile()
+                    self?.scheduleDebouncedExternalSave()
                 }
             )
         } else {
@@ -238,16 +309,17 @@ final class ContentViewModel {
                     guard let noteIndex = folder.notes.firstIndex(where: { $0.id == selectedNoteID }) else { return }
                     folder.notes[noteIndex].text = newValue
                     folder.notes[noteIndex].updatedAt = Date()
-                    let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
+                    // No trimmingCharacters copy of the whole document —
+                    // firstLineTitle only needs the first line anyway.
+                    if newValue.first(where: { !$0.isWhitespace && !$0.isNewline }) != nil {
                         if folder.notes[noteIndex].isTitleCustom == false {
-                            let baseTitle = self.firstLineTitle(from: trimmed)
+                            let baseTitle = self.firstLineTitle(from: newValue)
                             let uniqueTitle = self.uniqueNoteTitle(baseTitle, in: folder.notes, excludingNoteID: selectedNoteID)
                             folder.notes[noteIndex].title = uniqueTitle
                         }
                     }
                 }
-                self.saveAllToDisk()
+                self.scheduleDebouncedNoteSave()
             }
         )
     }
@@ -271,10 +343,157 @@ final class ContentViewModel {
     }
     
     func saveAllToDisk() {
+        // A full sync save supersedes any pending debounced writes (memory
+        // already holds the latest text, so nothing is lost).
+        pendingNoteSaveWorkItem?.cancel()
+        pendingNoteSaveWorkItem = nil
+        pendingNoteSnapshot = nil
+        pendingStructureSaveWorkItem?.cancel()
+        pendingStructureSaveWorkItem = nil
+        pendingExternalSaveWorkItem?.cancel()
+        pendingExternalSaveWorkItem = nil
         fileWatcher.notifyWillSave()
         folders = vaultManager.saveFolders(folders)
         fileWatcher.notifyDidSave()
         fileWatcher.updateVaultSnapshot()
+    }
+    
+    // MARK: - Debounced Saves (typing path)
+    
+    /// Debounced single-note save: memory is already updated by the caller,
+    /// only one .md file is written, on a background queue. The snapshot is
+    /// captured now (while the note is still selected), so a later note
+    /// switch can't redirect the write to the wrong file.
+    func scheduleDebouncedNoteSave(delay: TimeInterval = 0.8) {
+        pendingNoteSaveWorkItem?.cancel()
+        guard let snapshot = currentNoteSaveSnapshot() else { return }
+        pendingNoteSnapshot = snapshot
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingNoteSaveWorkItem = nil
+            // Re-snapshot: a later keystroke rescheduled us, so take the latest text.
+            let latest = self.currentNoteSaveSnapshotFor(noteID: snapshot.noteID) ?? snapshot
+            self.pendingNoteSnapshot = nil
+            self.writeNoteSnapshot(latest, syncSavedTitle: true)
+        }
+        pendingNoteSaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+    
+    /// Write pending note to disk now (single file, sync — cheap enough for
+    /// note switches / app backgrounding, and safe even after selection changed).
+    func flushPendingNoteSave() {
+        pendingNoteSaveWorkItem?.cancel()
+        pendingNoteSaveWorkItem = nil
+        guard let snapshot = pendingNoteSnapshot ?? currentNoteSaveSnapshot() else { return }
+        pendingNoteSnapshot = nil
+        writeNoteSnapshot(snapshot, syncSavedTitle: true)
+    }
+    
+    /// Snapshot of what needs writing for the currently selected note.
+    private func currentNoteSaveSnapshot() -> (fileURL: URL, oldFileURL: URL?, text: String, title: String, noteID: NoteItem.ID, folderID: NoteFolder.ID)? {
+        guard let note = selectedNote,
+              let folderID = selectedFolderID,
+              let folderPath = vaultManager.getFolderPath(folderID: folderID, in: folders),
+              let fileURL = vaultManager.noteFileURL(noteTitle: note.title, folderPath: folderPath) else { return nil }
+        let oldFileURL: URL? = (note.savedTitle != note.title)
+            ? vaultManager.noteFileURL(noteTitle: note.savedTitle, folderPath: folderPath)
+            : nil
+        return (fileURL, oldFileURL, note.text, note.title, note.id, folderID)
+    }
+    
+    /// Snapshot for a specific note ID (used at debounce-fire time so the
+    /// latest text wins even if selection already moved elsewhere).
+    private func currentNoteSaveSnapshotFor(noteID: NoteItem.ID) -> (fileURL: URL, oldFileURL: URL?, text: String, title: String, noteID: NoteItem.ID, folderID: NoteFolder.ID)? {
+        guard let folder = findFolderContainingNote(noteID: noteID),
+              let note = folder.notes.first(where: { $0.id == noteID }),
+              let folderPath = vaultManager.getFolderPath(folderID: folder.id, in: folders),
+              let fileURL = vaultManager.noteFileURL(noteTitle: note.title, folderPath: folderPath) else { return nil }
+        let oldFileURL: URL? = (note.savedTitle != note.title)
+            ? vaultManager.noteFileURL(noteTitle: note.savedTitle, folderPath: folderPath)
+            : nil
+        return (fileURL, oldFileURL, note.text, note.title, note.id, folder.id)
+    }
+    
+    private func writeNoteSnapshot(_ snapshot: (fileURL: URL, oldFileURL: URL?, text: String, title: String, noteID: NoteItem.ID, folderID: NoteFolder.ID), syncSavedTitle: Bool) {
+        fileWatcher.notifyWillSave()
+        let oldFileURL = snapshot.oldFileURL
+        let fileURL = snapshot.fileURL
+        saveQueue.async { [weak self] in
+            do {
+                try snapshot.text.write(to: fileURL, atomically: true, encoding: .utf8)
+                if let oldFileURL, oldFileURL != fileURL {
+                    try? FileManager.default.removeItem(at: oldFileURL)
+                }
+            } catch {
+                print("❌ Failed to save \(fileURL.lastPathComponent): \(error)")
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if syncSavedTitle {
+                    // Sync savedTitle without scheduling another save (no loop:
+                    // this mutation never calls scheduleDebouncedNoteSave).
+                    self.updateFolder(folderID: snapshot.folderID) { folder in
+                        if let i = folder.notes.firstIndex(where: { $0.id == snapshot.noteID }),
+                           folder.notes[i].title == snapshot.title {
+                            folder.notes[i].savedTitle = snapshot.title
+                        }
+                    }
+                }
+                self.fileWatcher.notifyDidSave()
+                self.fileWatcher.updateVaultSnapshot()
+                // Titles live in the structure JSON — persist it debounced.
+                self.scheduleDebouncedStructureSave()
+            }
+        }
+    }
+    
+    /// Debounced structure-JSON save (titles only — NoteItem encoding
+    /// excludes text, so this stays small; encode on main, only the file
+    /// write goes to background).
+    private func scheduleDebouncedStructureSave(delay: TimeInterval = 2.5) {
+        pendingStructureSaveWorkItem?.cancel()
+        let snapshot = folders
+        let vaultManager = vaultManager
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let structureURL = vaultManager.vaultURL?.appendingPathComponent(".vault-structure.json")
+            let data: Data?
+            do {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                encoder.dateEncodingStrategy = .iso8601
+                data = try encoder.encode(VaultData(folders: snapshot))
+            } catch {
+                print("❌ Failed to save structure: \(error)")
+                data = nil
+            }
+            guard let data, let structureURL else {
+                self.pendingStructureSaveWorkItem = nil
+                return
+            }
+            self.saveQueue.async { [weak self] in
+                try? data.write(to: structureURL)
+                DispatchQueue.main.async { [weak self] in
+                    self?.pendingStructureSaveWorkItem = nil
+                    self?.fileWatcher.updateVaultSnapshot()
+                }
+            }
+        }
+        pendingStructureSaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+    
+    /// Debounced external-file save (same lag source as vault notes).
+    private func scheduleDebouncedExternalSave(delay: TimeInterval = 0.8) {
+        pendingExternalSaveWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingExternalSaveWorkItem = nil
+            self.saveExternalFile()
+        }
+        pendingExternalSaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
     
     func refreshTrash() {
@@ -778,7 +997,9 @@ final class ContentViewModel {
     // MARK: - Text Processing Helpers
     
     func firstLineTitle(from text: String) -> String {
-        let firstLine = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
+        // prefix(while:) stops at the first newline — split(whereSeparator:)
+        // would scan the whole document on every keystroke.
+        let firstLine = String(text.prefix(while: { !$0.isNewline }))
         let trimmed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return "Untitled" }
         
@@ -800,7 +1021,11 @@ final class ContentViewModel {
     }
     
     func notePreview(for text: String) -> String {
-        let singleLine = text
+        // Rows render with .lineLimit(1) and this runs for every row on every
+        // keystroke — only look at the head instead of copying the whole
+        // document through replacingOccurrences.
+        let head = String(text.prefix(160))
+        let singleLine = head
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return singleLine.isEmpty ? "" : singleLine

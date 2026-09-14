@@ -38,6 +38,7 @@ MonkeyNote is a minimalist, native macOS note-taking application built with Swif
 - **Plain-Text Editing**: Fast plain-text editor, no lag on large files
 - **Custom Cursor**: Configurable cursor width, blinking, and animation settings
 - **Smart Autocomplete**: Intelligent word and line completion with customizable delay
+- **Spellcheck**: Misspelled words are underlined, sharing the autocomplete dictionary language
 - **Powerful Search**: Fast in-document search with match navigation
 - **Drag & Drop**: Intuitive drag-and-drop support for notes and folders
 
@@ -90,6 +91,7 @@ Access settings via the gear icon in the sidebar:
 - **Font Size**: Adjustable text size
 - **Cursor Settings**: Width, blinking, animation
 - **Autocomplete**: Enable/disable, delay, opacity
+- **Spellcheck**: Enable/disable (uses the autocomplete dictionary language)
 - **Suggestion Mode**: Word or line completion
 - **Vault Location**: Change notes storage location
 

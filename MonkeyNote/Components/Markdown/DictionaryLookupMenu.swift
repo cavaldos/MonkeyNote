@@ -225,10 +225,12 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
     }
     
     private func setupScrollView(in container: NSView, attributedContent: NSAttributedString, menuHeight: CGFloat) {
+        // ScrollView stretches flush to the right edge so the scroller sits
+        // at the popup border; the text keeps its 16pt right padding via textWidth.
         let scrollViewFrame = NSRect(
             x: padding,
             y: padding,
-            width: menuWidth - padding * 2,
+            width: menuWidth - padding,
             height: menuHeight - padding * 2
         )
         
@@ -236,20 +238,26 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
         scroll.borderType = .noBorder
         scroll.backgroundColor = .clear
         scroll.drawsBackground = false
-        
-        let textViewFrame = NSRect(x: 0, y: 0, width: scrollViewFrame.width, height: scrollViewFrame.height)
+
+        let textWidth = scroll.contentSize.width - padding
+        let textViewFrame = NSRect(x: 0, y: 0, width: textWidth, height: scroll.contentSize.height)
         let text = NSTextView(frame: textViewFrame)
         text.isEditable = false
         text.isSelectable = true
         text.backgroundColor = .clear
         text.drawsBackground = false
         text.textContainerInset = NSSize(width: 0, height: 0)
+        text.autoresizingMask = [.width]
+        text.minSize = NSSize(width: 0, height: 0)
+        text.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         
         text.textContainer?.widthTracksTextView = true
-        text.textContainer?.containerSize = NSSize(width: scrollViewFrame.width, height: .greatestFiniteMagnitude)
+        text.textContainer?.containerSize = NSSize(width: textWidth, height: .greatestFiniteMagnitude)
+        text.textContainer?.lineFragmentPadding = 0
         text.isVerticallyResizable = true
         text.isHorizontallyResizable = false
         

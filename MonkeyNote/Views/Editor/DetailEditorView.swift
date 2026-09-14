@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 
 struct DetailEditorView: View {
     @Environment(ContentViewModel.self) var viewModel
+    @AppStorage("note.spellcheckEnabled") private var spellcheckEnabled: Bool = true
     
     var body: some View {
         @Bindable var vm = viewModel
@@ -168,11 +169,11 @@ struct DetailEditorView: View {
                     viewModel.updateSearchMatches(count: count, isComplete: isComplete)
                 },
                 onCursorLineChanged: { line in
-                    viewModel.cursorLine = line
+                    viewModel.updateCursorLine(line)
                 }
             )
             .overlay(alignment: .topLeading) {
-                if viewModel.activeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    if viewModel.activeText.first(where: { !$0.isWhitespace && !$0.isNewline }) == nil {
                     Text("Write something…")
                         .font(.system(size: viewModel.fontSize, weight: .regular, design: viewModel.fontDesign))
                         .foregroundStyle(viewModel.isDarkMode ? .white.opacity(0.25) : .black.opacity(0.25))
@@ -189,7 +190,7 @@ struct DetailEditorView: View {
                 .scrollContentBackground(.hidden)
                 .background(Color.clear)
                 .overlay(alignment: .topLeading) {
-                    if viewModel.activeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if viewModel.activeText.first(where: { !$0.isWhitespace && !$0.isNewline }) == nil {
                         Text("Write something…")
                             .font(.system(size: viewModel.fontSize, weight: .regular, design: viewModel.fontDesign))
                             .foregroundStyle(viewModel.isDarkMode ? .white.opacity(0.25) : .black.opacity(0.25))
@@ -242,6 +243,13 @@ struct DetailEditorView: View {
         )
         .disabled(viewModel.selectedNoteID == nil)
         .opacity(viewModel.selectedNoteID == nil ? 0.5 : 1.0)
+
+        ThemeIconButton(
+            systemImage: "text.badge.checkmark",
+            isSelected: spellcheckEnabled,
+            action: { spellcheckEnabled.toggle() },
+            tooltip: spellcheckEnabled ? "Spellcheck: ON (click to disable)" : "Spellcheck: OFF (click to enable)"
+        )
         
         // Search bar
         SearchBarView()

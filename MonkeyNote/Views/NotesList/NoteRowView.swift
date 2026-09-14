@@ -32,6 +32,11 @@ struct NoteRowView: View {
                     .font(.system(.footnote, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+
+                Text(DateFormatter.formatDate(note.createdAt))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
             
             Spacer()
