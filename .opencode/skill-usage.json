@@ -1,16 +1,29 @@
 {
   "sessions": {
     "sessions": {
-      "ses_f6474439affewUOsJ6irj5zTVk": {
+      "sessions": {
+        "ses_f6474439affewUOsJ6irj5zTVk": {
+          "skills": {
+            "animation-principles": {
+              "name": "animation-principles",
+              "count": 1,
+              "firstUsedAt": "2026-09-13T16:17:32.243Z",
+              "lastUsedAt": "2026-09-13T16:17:32.243Z"
+            }
+          },
+          "updatedAt": "2026-09-13T16:17:32.243Z"
+        }
+      },
+      "ses_f604dcea1ffeah8d6lDRIFXW9D": {
         "skills": {
-          "animation-principles": {
-            "name": "animation-principles",
+          "swift-expert": {
+            "name": "swift-expert",
             "count": 1,
-            "firstUsedAt": "2026-09-13T16:17:32.243Z",
-            "lastUsedAt": "2026-09-13T16:17:32.243Z"
+            "firstUsedAt": "2026-09-14T11:34:21.137Z",
+            "lastUsedAt": "2026-09-14T11:34:21.137Z"
           }
         },
-        "updatedAt": "2026-09-13T16:17:32.243Z"
+        "updatedAt": "2026-09-14T11:34:21.137Z"
       }
     }
   }

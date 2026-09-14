@@ -20,9 +20,14 @@ class LineNumberRulerView: NSRulerView {
     // Current line tracking
     private var currentLine: Int = 1
 
-    // Cached line-start offsets (UTF-16, matches NSTextView.selectedRange).
-    // Rebuilt only on text change — scroll/selection/draw reuse it.
-    private var cachedLineStarts: [Int]?
+    // Chunked line-start cache: mỗi chunk ≤ ~1024 dòng. Patch 1 edit chỉ chạm
+    // đúng 1 chunk + dịch bases các chunk sau (vài chục số) — O(√N) thay vì
+    // O(N) dịch cả mảng 40k phần tử bằng loop Swift mỗi keystroke.
+    // bases: utf16 offset tuyệt đối của dòng đầu mỗi chunk.
+    // lines: starts tương đối trong chunk (phần tử đầu luôn 0).
+    private var chunkBases: [Int]?
+    private var chunkLines: [[Int]]?
+    private let chunkTargetLines = 512
     private var cachedTextLength: Int = -1
     private var isCacheDirty: Bool = true
     private var lastDarkMode: Bool?
@@ -42,6 +47,10 @@ class LineNumberRulerView: NSRulerView {
         
         self.clientView = textView
         self.ruleThickness = rulerWidth
+
+        // Ruler làm textStorage delegate để patch cache theo từng edit
+        // (ko ai khác dùng delegate này — đã grep).
+        textView.textStorage?.delegate = self
         
         setupNotifications()
     }
@@ -123,32 +132,34 @@ class LineNumberRulerView: NSRulerView {
         guard let textView = textView else { return 1 }
         let text = textView.string
         if text.isEmpty { return 1 }
-        let starts = ensureLineStarts(for: text)
-        let clamped = max(0, min(location, cachedTextLength))
-        return Self.lineNumber(at: clamped, in: starts)
+        ensureChunkCache(for: text)
+        return lineNumberAt(max(0, min(location, cachedTextLength)))
     }
 
-    static func lineNumber(at location: Int, in lineStarts: [Int]) -> Int {
-        // Rightmost start <= location (binary search).
-        var lo = 0
-        var hi = lineStarts.count - 1
-        var result = 1
-        while lo <= hi {
-            let mid = (lo + hi) >> 1
-            if lineStarts[mid] <= location {
-                result = mid + 1
-                lo = mid + 1
-            } else {
-                hi = mid - 1
-            }
-        }
-        return result
+    /// Line number trên cache đã ensure (draw gọi trực tiếp để khỏi ensure
+    /// lại mỗi visible fragment).
+    private func lineNumberAt(_ clamped: Int) -> Int {
+        guard let bases = chunkBases, let lines = chunkLines, !bases.isEmpty else { return 1 }
+        let ci = max(0, Self.upperBound(bases, clamped) - 1)
+        let rel = clamped - bases[ci]
+        var n = Self.upperBound(lines[ci], rel) // starts <= rel = index 1-based trong chunk
+        for i in 0..<ci { n += lines[i].count }
+        return max(1, n)
+    }
+
+    private func totalLineCount() -> Int {
+        guard let lines = chunkLines else { return 1 }
+        var n = 0
+        for a in lines { n += a.count }
+        return max(1, n)
     }
     
     // MARK: - Notifications
     
     @objc private func textDidChange(_ notification: Notification) {
-        isCacheDirty = true
+        // Cache do textStorage delegate patch trực tiếp mỗi edit nên ở đây
+        // chỉ cần vẽ lại, không full rescan. Trường hợp delegate miss (paste
+        // khủng → tự đánh dirty) thì ensureLineStarts tự rebuild khi cần.
         needsDisplay = true
     }
     
@@ -163,26 +174,36 @@ class LineNumberRulerView: NSRulerView {
     
     // MARK: - Line Calculation
 
-    /// Single UTF-16 pass counting \n — same convention as Coordinator +
-    /// ContentViewModel stats. O(N) once per edit, reused by every draw/scroll/selection.
-    private func ensureLineStarts(for text: String) -> [Int] {
+    /// Single UTF-16 pass chia chunk — cùng convention \n với Coordinator +
+    /// ContentViewModel stats. Chạy 1 lần khi mở file/paste lớn, còn gõ thường
+    /// thì delegate patch từng chunk (không full rebuild).
+    private func ensureChunkCache(for text: String) {
         let utf16Count = text.utf16.count
-        if !isCacheDirty, let cached = cachedLineStarts, utf16Count == cachedTextLength {
-            return cached
+        if !isCacheDirty, chunkBases != nil, chunkLines != nil, utf16Count == cachedTextLength {
+            return
         }
-        var starts: [Int] = [0]
-        starts.reserveCapacity(max(16, utf16Count / 40))
+        var bases: [Int] = [0]
+        var lines: [[Int]] = [[0]]
+        lines[0].reserveCapacity(chunkTargetLines)
+        var lineInChunk = 0
         var offset = 0
         for unit in text.utf16 {
             if unit == 0xA {
-                starts.append(offset + 1)
+                lineInChunk += 1
+                if lineInChunk >= chunkTargetLines {
+                    bases.append(offset + 1)
+                    lines.append([0])
+                    lineInChunk = 0
+                } else {
+                    lines[lines.count - 1].append(offset + 1 - bases[bases.count - 1])
+                }
             }
             offset += 1
         }
-        cachedLineStarts = starts
+        chunkBases = bases
+        chunkLines = lines
         cachedTextLength = utf16Count
         isCacheDirty = false
-        return starts
     }
     
     private func updateCurrentLine() {
@@ -225,9 +246,9 @@ class LineNumberRulerView: NSRulerView {
             return
         }
         
-        // Cached line starts — built once per edit, reused on scroll/selection.
-        let lineStarts = ensureLineStarts(for: text)
-        let totalLines = lineStarts.count
+        // Cached line starts — built once per file/paste, patched per keystroke.
+        ensureChunkCache(for: text)
+        let totalLines = totalLineCount()
 
         // Fit the gutter to the digit count (converges after one extra draw).
         let digits = String(totalLines).count
@@ -260,8 +281,8 @@ class LineNumberRulerView: NSRulerView {
             // Convert glyph range to character range
             let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
             
-            // Binary search: O(log N) per visible fragment.
-            let lineNumber = Self.lineNumber(at: charRange.location, in: lineStarts)
+            // Binary search trên chunked cache: O(log N) mỗi visible fragment.
+            let lineNumber = self.lineNumberAt(max(0, min(charRange.location, self.cachedTextLength)))
             
             // Skip if we've already drawn this line (handles soft-wrapped lines)
             if drawnLines.contains(lineNumber) {
@@ -317,6 +338,88 @@ class LineNumberRulerView: NSRulerView {
     
     override var isFlipped: Bool {
         return true
+    }
+}
+
+// MARK: - Incremental line-start cache (chỉ xử lý dòng đang sửa)
+
+extension LineNumberRulerView: NSTextStorageDelegate {
+    func textStorage(
+        _ textStorage: NSTextStorage,
+        didProcessEditing editedMask: NSTextStorageEditActions,
+        range editedRange: NSRange,
+        changeInLength delta: Int
+    ) {
+        // Đổi attribute (font/màu) không đẻ/mất dòng → bỏ qua.
+        guard editedMask.contains(.editedCharacters) else { return }
+        // Chưa có cache (mới mở file) → để ensureChunkCache build lazy 1 lần.
+        guard var bases = chunkBases, var lines = chunkLines, !isCacheDirty else { return }
+        // Paste/replace khủng: đánh dirty, rebuild 1 lần khi cần (hiếm).
+        guard editedRange.length <= 4096 else {
+            isCacheDirty = true
+            return
+        }
+
+        let loc = editedRange.location
+        let oldReplacedLen = editedRange.length - delta
+
+        // Đếm \n trong đúng vùng vừa sửa (gõ 1 phím = 1 vòng lặp).
+        let ns = textStorage.string as NSString
+        var newStarts: [Int] = []
+        var i = loc
+        let end = loc + editedRange.length
+        while i < end {
+            if ns.character(at: i) == 0xA { newStarts.append(i + 1) }
+            i += 1
+        }
+
+        // Chunk chứa điểm sửa (bases[0] == 0 nên upperBound >= 1).
+        let c = max(0, Self.upperBound(bases, loc) - 1)
+        let base = bases[c]
+        var arr = lines[c]
+        let local = loc - base
+        let split = Self.upperBound(arr, local)
+        let tail = Self.upperBound(arr, local + oldReplacedLen, from: split)
+        arr.replaceSubrange(split..<tail, with: newStarts.map { $0 - base })
+        // Đuôi trong chunk chỉ vài trăm phần tử là cùng.
+        if delta != 0 {
+            for j in (split + newStarts.count)..<arr.count { arr[j] += delta }
+        }
+        lines[c] = arr
+        // Dịch bases các chunk sau (vài chục số).
+        if delta != 0 {
+            for k in (c + 1)..<bases.count { bases[k] += delta }
+        }
+        // Chunk phình quá thì chẻ đôi để patch sau vẫn rẻ.
+        if arr.count > chunkTargetLines * 2 {
+            let mid = arr.count / 2
+            let second = arr[mid...].map { $0 - arr[mid] }
+            let newBase = base + arr[mid]
+            arr.removeSubrange(mid...)
+            lines[c] = arr
+            lines.insert(second, at: c + 1)
+            bases.insert(newBase, at: c + 1)
+        }
+        chunkBases = bases
+        chunkLines = lines
+        cachedTextLength += delta
+    }
+}
+
+private extension LineNumberRulerView {
+    /// Index đầu tiên có start > value (binary search, từ `from`).
+    static func upperBound(_ starts: [Int], _ value: Int, from: Int = 0) -> Int {
+        var lo = from
+        var hi = starts.count
+        while lo < hi {
+            let mid = (lo + hi) >> 1
+            if starts[mid] <= value {
+                lo = mid + 1
+            } else {
+                hi = mid
+            }
+        }
+        return lo
     }
 }
 #endif

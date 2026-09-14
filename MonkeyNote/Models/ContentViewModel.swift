@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import Observation
 
 #if os(iOS)
 import UIKit
@@ -31,7 +32,11 @@ final class ContentViewModel {
     
     // MARK: - Selection State
     var selectedFolderID: NoteFolder.ID?
-    var selectedNoteID: NoteItem.ID?
+    // Đổi note/file ngoài = text ngoài đổi → bump để editor sync 1 lần.
+    // Gõ trong editor đi đường draft silent (không qua đây) nên không bump thừa.
+    var selectedNoteID: NoteItem.ID? {
+        didSet { if oldValue != selectedNoteID { bumpTextRevision() } }
+    }
     
     // MARK: - Search State
     var searchText: String = ""
@@ -64,7 +69,9 @@ final class ContentViewModel {
     var largeFileInfo: (name: String, lines: Int)?
     
     // MARK: - External File State
-    var externalFileURL: URL?
+    var externalFileURL: URL? {
+        didSet { if oldValue != externalFileURL { bumpTextRevision() } }
+    }
     var externalFileText: String = ""
     var isDropTargeted: Bool = false
     
@@ -166,6 +173,21 @@ final class ContentViewModel {
         }
     }
     
+    // MARK: - Silent typing draft (gõ mượt: 0 notify mỗi keystroke)
+    @ObservationIgnored private var hasEditorDraft = false
+    @ObservationIgnored private var editorDraftIsExternal = false
+    @ObservationIgnored private var editorDraftNoteID: NoteItem.ID?
+    @ObservationIgnored private var editorDraftText = ""
+
+    // MARK: - External text revision (bỏ string-compare O(N) mỗi render)
+    // textView là source of truth lúc gõ (draft silent, KHÔNG bump). Mọi đường
+    // ghi ngoài (đổi note/file, reload đĩa, replace, binding set) đều bump →
+    // updateNSView chỉ so chuỗi khi revision đổi, còn lại skip O(1).
+    // @ObservationIgnored để tự nó không gây render; các đường ghi ngoài luôn
+    // đi kèm observable change khác nên SwiftUI vẫn render và mang revision mới xuống.
+    @ObservationIgnored private(set) var textRevision: UInt64 = 0
+    private func bumpTextRevision() { textRevision &+= 1 }
+
     // MARK: - Debounced Save State
     // Typing must never block on disk I/O: each keystroke only mutates memory,
     // disk writes are debounced and run on a background queue.
@@ -211,20 +233,49 @@ final class ContentViewModel {
     }
     
     var activeText: String {
-        isEditingExternalFile ? externalFileText : (selectedNote?.text ?? "")
+        if isEditingExternalFile { return liveExternalText }
+        guard let note = selectedNote else { return "" }
+        return liveTextFor(noteID: note.id, nominal: note.text)
     }
     
     // Single-pass document stats, cached by text equality (memcmp-fast).
     // StatusBar reads wordCount/lineCount/characterCount on every render, so
     // without the cache each keystroke scans the document 3 times.
-    private var _statsText = ""
-    private var _statsWords = 0
-    private var _statsLines = 1
-    private var _statsChars = 0
+    // @ObservationIgnored: refresh chạy trong lúc render body — nếu để
+    // observable thì mỗi phím gõ notify SwiftUI re-render cả cây, updateNSView
+    // thấy Binding cũ (chưa commit draft) sẽ reset textView.string → mất chữ,
+    // con trỏ nhảy lung tung. Stats chấp nhận trễ 1 nhịp debounce (0.8s).
+    @ObservationIgnored private var _statsText = ""
+    @ObservationIgnored private var _statsWords = 0
+    @ObservationIgnored private var _statsLines = 1
+    @ObservationIgnored private var _statsChars = 0
+    // File lớn: đếm lại mỗi keystroke là full scan O(N) → throttle 1/s,
+    // hẹn refresh 1 lần sau khi ngừng gõ để số liệu đúng lại.
+    @ObservationIgnored private var _statsLastLargeRefresh = Date.distantPast
+    @ObservationIgnored private var _statsRefreshPending = false
     
     private func refreshStatsIfNeeded() {
         let t = activeText
         if t == _statsText { return }
+        // Giữ đồng bộ với CursorTextView.largeDocumentLengthThreshold (file này
+        // build cả iOS nên không tham chiếu trực tiếp class macOS-only đó).
+        // File vừa (~8k từ): full scan mỗi keystroke bắt đầu tốn → throttle 0.4s.
+        // File lớn: throttle 1s. Hẹn refresh 1 lần sau khi ngừng gõ để số đúng lại.
+        let utf16Count = t.utf16.count
+        let throttleInterval: TimeInterval = utf16Count > 300_000 ? 1.0 : (utf16Count > 50_000 ? 0.4 : 0)
+        if throttleInterval > 0 {
+            if Date().timeIntervalSince(_statsLastLargeRefresh) < throttleInterval {
+                if !_statsRefreshPending {
+                    _statsRefreshPending = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + throttleInterval) { [weak self] in
+                        self?._statsRefreshPending = false
+                        self?.refreshStatsIfNeeded()
+                    }
+                }
+                return
+            }
+            _statsLastLargeRefresh = Date()
+        }
         // UTF-16 single pass (~0.1ms for a 3000-word doc vs ~1.5ms iterating
         // Characters). Approximation notes: non-ASCII whitespace (e.g. NBSP)
         // counts as a word char, combining marks/ZWJ sequences count as one
@@ -289,9 +340,11 @@ final class ContentViewModel {
     var activeTextBinding: Binding<String> {
         if isEditingExternalFile {
             return Binding(
-                get: { [weak self] in self?.externalFileText ?? "" },
+                get: { [weak self] in self?.liveExternalText ?? "" },
                 set: { [weak self] newValue in
+                    self?.hasEditorDraft = false
                     self?.externalFileText = newValue
+                    self?.bumpTextRevision()
                     self?.scheduleDebouncedExternalSave()
                 }
             )
@@ -303,30 +356,129 @@ final class ContentViewModel {
     var selectedNoteTextBinding: Binding<String> {
         Binding(
             get: { [weak self] in
-                self?.selectedNote?.text ?? ""
+                // Draft-aware: lúc đang gõ, text thật nằm ở editorDraftText
+                // (@ObservationIgnored, chưa commit). Trả nominal (note.text)
+                // ở đây thì updateNSView thấy textView.string != text sau bất kỳ
+                // re-render nào (đổi dòng status, search count...) sẽ reset
+                // textView về bản cũ → mất chữ + con trỏ nhảy.
+                guard let self, let note = self.selectedNote else { return "" }
+                return self.liveTextFor(noteID: note.id, nominal: note.text)
             },
             set: { [weak self] newValue in
                 guard let self = self,
                       let selectedFolderID = self.selectedFolderID,
                       let selectedNoteID = self.selectedNoteID else { return }
-                
+                // Write-through ngoài (hiếm): bỏ draft cũ cho khỏi đè.
+                if self.hasEditorDraft && !self.editorDraftIsExternal
+                    && self.editorDraftNoteID == selectedNoteID {
+                    self.hasEditorDraft = false
+                }
                 self.updateFolder(folderID: selectedFolderID) { folder in
                     guard let noteIndex = folder.notes.firstIndex(where: { $0.id == selectedNoteID }) else { return }
                     folder.notes[noteIndex].text = newValue
                     folder.notes[noteIndex].updatedAt = Date()
-                    // No trimmingCharacters copy of the whole document —
-                    // firstLineTitle only needs the first line anyway.
-                    if newValue.first(where: { !$0.isWhitespace && !$0.isNewline }) != nil {
-                        if folder.notes[noteIndex].isTitleCustom == false {
-                            let baseTitle = self.firstLineTitle(from: newValue)
-                            let uniqueTitle = self.uniqueNoteTitle(baseTitle, in: folder.notes, excludingNoteID: selectedNoteID)
-                            folder.notes[noteIndex].title = uniqueTitle
-                        }
-                    }
+                    // Retitle không làm ở đây nữa — dồn vào lúc flush debounce
+                    // (syncNoteTitleIfNeeded), mỗi keystroke không đụng title.
                 }
+                self.bumpTextRevision()
                 self.scheduleDebouncedNoteSave()
             }
         )
+    }
+
+    /// Đường gõ phím chính: textView là source of truth mỗi keystroke, text
+    /// chỉ nằm ở draft @ObservationIgnored (không notify → SwiftUI không
+    /// re-render cả cây sidebar/list/editor/status mỗi phím). Draft commit
+    /// 1 lần lúc debounce-fire / chuyển note / save. Ngoại lệ duy nhất:
+    /// doc chuyển rỗng↔có-chữ thì write-through để placeholder ẩn/hiện đúng.
+    func applyEditorText(_ newText: String) {
+        if isEditingExternalFile {
+            guard externalFileURL != nil else { return }
+            let old = (hasEditorDraft && editorDraftIsExternal) ? editorDraftText : externalFileText
+            if Self.isEffectivelyEmpty(old) != Self.isEffectivelyEmpty(newText) {
+                hasEditorDraft = false
+                externalFileText = newText
+                bumpTextRevision()
+            } else {
+                editorDraftIsExternal = true
+                editorDraftNoteID = nil
+                editorDraftText = newText
+                hasEditorDraft = true
+            }
+            scheduleDebouncedExternalSave()
+            return
+        }
+        guard let selectedNoteID,
+              let folder = findFolderContainingNote(noteID: selectedNoteID),
+              let note = folder.notes.first(where: { $0.id == selectedNoteID }) else { return }
+        let old = liveTextFor(noteID: selectedNoteID, nominal: note.text)
+        if Self.isEffectivelyEmpty(old) != Self.isEffectivelyEmpty(newText) {
+            hasEditorDraft = false
+            updateFolder(folderID: folder.id) { f in
+                guard let i = f.notes.firstIndex(where: { $0.id == selectedNoteID }) else { return }
+                f.notes[i].text = newText
+                f.notes[i].updatedAt = Date()
+            }
+            bumpTextRevision()
+        } else {
+            editorDraftIsExternal = false
+            editorDraftNoteID = selectedNoteID
+            editorDraftText = newText
+            hasEditorDraft = true
+        }
+        scheduleDebouncedNoteSave()
+    }
+
+    /// Đổ draft vào memory thật (1 notify duy nhất). Gọi ở save-fire, flush,
+    /// saveAll, replace — không gọi mỗi keystroke.
+    @discardableResult
+    private func commitEditorDraft() -> Bool {
+        guard hasEditorDraft else { return false }
+        hasEditorDraft = false
+        if editorDraftIsExternal {
+            externalFileText = editorDraftText
+            return true
+        }
+        guard let id = editorDraftNoteID,
+              let folder = findFolderContainingNote(noteID: id) else { return false }
+        updateFolder(folderID: folder.id) { f in
+            guard let i = f.notes.firstIndex(where: { $0.id == id }) else { return }
+            f.notes[i].text = editorDraftText
+            f.notes[i].updatedAt = Date()
+        }
+        return true
+    }
+
+    /// Text đang sửa (draft-aware). Editor/stats/save đọc qua đây thay vì
+    /// đọc thẳng note.text.
+    private func liveTextFor(noteID: NoteItem.ID, nominal: String) -> String {
+        (hasEditorDraft && !editorDraftIsExternal && editorDraftNoteID == noteID)
+            ? editorDraftText : nominal
+    }
+
+    private var liveExternalText: String {
+        (hasEditorDraft && editorDraftIsExternal) ? editorDraftText : externalFileText
+    }
+
+    private static func isEffectivelyEmpty(_ s: String) -> Bool {
+        s.first(where: { !$0.isWhitespace && !$0.isNewline }) == nil
+    }
+
+    /// Retitle debounce: chỉ chạy lúc flush save (≤1 lần/nhịp gõ), không phải mỗi phím.
+    private func syncNoteTitleIfNeeded(noteID: NoteItem.ID) {
+        guard let folder = findFolderContainingNote(noteID: noteID),
+              let note = folder.notes.first(where: { $0.id == noteID }),
+              !note.isTitleCustom,
+              note.text.first(where: { !$0.isWhitespace && !$0.isNewline }) != nil else { return }
+        let base = firstLineTitle(from: note.text)
+        guard base != note.title else { return }
+        let unique = uniqueNoteTitle(base, in: folder.notes, excludingNoteID: noteID)
+        guard unique != note.title else { return }
+        updateFolder(folderID: folder.id) { f in
+            if let i = f.notes.firstIndex(where: { $0.id == noteID }) {
+                f.notes[i].title = unique
+            }
+        }
     }
     
     // MARK: - Initialization
@@ -348,6 +500,8 @@ final class ContentViewModel {
     }
     
     func saveAllToDisk() {
+        // Commit draft gõ dở trước: save toàn bộ mà quên draft là mất chữ.
+        commitEditorDraft()
         // A full sync save supersedes any pending debounced writes (memory
         // already holds the latest text, so nothing is lost).
         pendingNoteSaveWorkItem?.cancel()
@@ -376,6 +530,11 @@ final class ContentViewModel {
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.pendingNoteSaveWorkItem = nil
+            // Đổ draft 1 lần (1 notify), rồi retitle + snapshot text mới nhất.
+            self.commitEditorDraft()
+            // Retitle debounce ở đây (≤1 lần/nhịp gõ), xong mới snapshot để
+            // tên file trên đĩa đúng luôn.
+            self.syncNoteTitleIfNeeded(noteID: snapshot.noteID)
             // Re-snapshot: a later keystroke rescheduled us, so take the latest text.
             let latest = self.currentNoteSaveSnapshotFor(noteID: snapshot.noteID) ?? snapshot
             self.pendingNoteSnapshot = nil
@@ -390,9 +549,12 @@ final class ContentViewModel {
     func flushPendingNoteSave() {
         pendingNoteSaveWorkItem?.cancel()
         pendingNoteSaveWorkItem = nil
+        commitEditorDraft()
         guard let snapshot = pendingNoteSnapshot ?? currentNoteSaveSnapshot() else { return }
         pendingNoteSnapshot = nil
-        writeNoteSnapshot(snapshot, syncSavedTitle: true)
+        syncNoteTitleIfNeeded(noteID: snapshot.noteID)
+        let latest = currentNoteSaveSnapshotFor(noteID: snapshot.noteID) ?? snapshot
+        writeNoteSnapshot(latest, syncSavedTitle: true)
     }
     
     /// Snapshot of what needs writing for the currently selected note.
@@ -404,7 +566,7 @@ final class ContentViewModel {
         let oldFileURL: URL? = (note.savedTitle != note.title)
             ? vaultManager.noteFileURL(noteTitle: note.savedTitle, folderPath: folderPath)
             : nil
-        return (fileURL, oldFileURL, note.text, note.title, note.id, folderID)
+        return (fileURL, oldFileURL, liveTextFor(noteID: note.id, nominal: note.text), note.title, note.id, folderID)
     }
     
     /// Snapshot for a specific note ID (used at debounce-fire time so the
@@ -417,7 +579,7 @@ final class ContentViewModel {
         let oldFileURL: URL? = (note.savedTitle != note.title)
             ? vaultManager.noteFileURL(noteTitle: note.savedTitle, folderPath: folderPath)
             : nil
-        return (fileURL, oldFileURL, note.text, note.title, note.id, folder.id)
+        return (fileURL, oldFileURL, liveTextFor(noteID: note.id, nominal: note.text), note.title, note.id, folder.id)
     }
     
     private func writeNoteSnapshot(_ snapshot: (fileURL: URL, oldFileURL: URL?, text: String, title: String, noteID: NoteItem.ID, folderID: NoteFolder.ID), syncSavedTitle: Bool) {
@@ -512,13 +674,17 @@ final class ContentViewModel {
             guard let self else { return }
             
             if self.isEditingExternalFile {
-                // External file changed on disk
-                guard newContent != self.externalFileText else { return }
+                // External file changed on disk (so với text đang thấy,
+                // gồm cả draft gõ dở — đĩa thắng, bỏ draft).
+                guard newContent != self.liveExternalText else { return }
+                self.hasEditorDraft = false
                 self.externalFileText = newContent
+                self.bumpTextRevision()
                 print("🔄 External file reloaded from disk")
             } else {
                 // Vault note changed on disk
-                guard let note = self.selectedNote, newContent != note.text else { return }
+                guard let note = self.selectedNote,
+                      newContent != self.liveTextFor(noteID: note.id, nominal: note.text) else { return }
                 self.updateSelectedNoteText(newContent)
                 print("🔄 Note reloaded from disk")
             }
@@ -530,7 +696,11 @@ final class ContentViewModel {
             let currentFolderID = self.selectedFolderID
             
             self.folders = self.vaultManager.loadFolders()
-            
+
+            // Reload từ đĩa có thể đổi text mà selectedNoteID giữ nguyên
+            // → bump để editor sync lại (thừa 1 compare nếu text không đổi).
+            self.bumpTextRevision()
+
             // Restore selection
             self.selectedFolderID = currentFolderID
             self.selectedNoteID = currentNoteID
@@ -564,10 +734,15 @@ final class ContentViewModel {
     /// Update the selected note's text without triggering a save (used for external changes).
     private func updateSelectedNoteText(_ newContent: String) {
         guard let selectedFolderID, let selectedNoteID else { return }
+        // Đĩa thắng: bỏ draft gõ dở của note này.
+        if hasEditorDraft && !editorDraftIsExternal && editorDraftNoteID == selectedNoteID {
+            hasEditorDraft = false
+        }
         updateFolder(folderID: selectedFolderID) { folder in
             guard let noteIndex = folder.notes.firstIndex(where: { $0.id == selectedNoteID }) else { return }
             folder.notes[noteIndex].text = newContent
         }
+        bumpTextRevision()
     }
     
     /// Get the file URL for the currently selected note.
@@ -604,6 +779,7 @@ final class ContentViewModel {
     }
     
     func saveExternalFile() {
+        commitEditorDraft()
         guard let url = externalFileURL else { return }
         fileWatcher.notifyWillSave()
         do {
@@ -714,14 +890,17 @@ final class ContentViewModel {
     }
     
     func updateSearchMatches(count: Int, isComplete: Bool) {
-        searchMatchCount = count
-        isSearchComplete = isComplete
-        if currentSearchIndex >= count {
-            currentSearchIndex = max(0, count - 1)
-        }
+        // Guard từng cái như updateCursorLine: callback này bắn sau mỗi layout
+        // (debouncedUpdateHighlights) kể cả khi không search — gán mù sẽ
+        // notify SwiftUI render cả cây + memcmp full text mỗi lần nhấn mũi tên.
+        if searchMatchCount != count { searchMatchCount = count }
+        if isSearchComplete != isComplete { isSearchComplete = isComplete }
+        let clamped = count > 0 ? min(currentSearchIndex, count - 1) : 0
+        if currentSearchIndex != clamped { currentSearchIndex = clamped }
     }
     
     func replaceCurrentMatch() {
+        commitEditorDraft()
         guard let selectedNoteIndex = selectedNoteIndex,
               let selectedFolderID = selectedFolderID,
               !searchText.isEmpty else { return }
@@ -741,7 +920,8 @@ final class ContentViewModel {
             folder.notes[selectedNoteIndex].text = String(beforeMatch) + self.replaceText + String(afterMatch)
             folder.notes[selectedNoteIndex].updatedAt = Date()
         }
-        
+        bumpTextRevision()
+
         saveAllToDisk()
         
         #if os(macOS)
@@ -752,6 +932,7 @@ final class ContentViewModel {
     }
     
     func replaceAll() {
+        commitEditorDraft()
         guard let selectedNoteIndex = selectedNoteIndex,
               let selectedFolderID = selectedFolderID,
               !searchText.isEmpty else { return }
@@ -768,7 +949,8 @@ final class ContentViewModel {
             )
             folder.notes[selectedNoteIndex].updatedAt = Date()
         }
-        
+        bumpTextRevision()
+
         saveAllToDisk()
         
         #if os(macOS)

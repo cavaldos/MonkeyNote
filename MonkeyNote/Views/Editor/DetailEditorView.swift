@@ -171,7 +171,13 @@ struct DetailEditorView: View {
                 },
                 onCursorLineChanged: { line in
                     viewModel.updateCursorLine(line)
-                }
+                },
+                onTextEdited: { newText in
+                    viewModel.applyEditorText(newText)
+                },
+                // Revision ghi-ngoài: editor bỏ string-compare O(N) mỗi render,
+                // chỉ sync khi số này đổi (đổi note/file, reload đĩa, replace).
+                textVersion: viewModel.textRevision
             )
             .overlay(alignment: .topLeading) {
                     if viewModel.activeText.first(where: { !$0.isWhitespace && !$0.isNewline }) == nil {

@@ -43,6 +43,13 @@ class CursorTextView: NSTextView {
     var isSearchComplete: Bool = false
     var lastSearchQuery: String = ""
     var lastVisibleRect: NSRect = .zero
+    var lastFullSearchTime: Date = .distantPast  // Throttle re-search file lớn
+    // Viewport-first search: task đang quét snapshot ngoài main (không restart
+    // khi scroll, tránh livelock). Token vô hiệu hop-main của task đã bị cancel.
+    var isSearching: Bool = false
+    var searchToken = UUID()
+    // true = edit trong doc (debounce, giữ highlights cũ); false = đổi query (search ngay).
+    var searchNeedsRefreshDueToEdit: Bool = false
     
     // Layer pooling for reuse
     var layerPool: [CALayer] = []
@@ -110,9 +117,37 @@ class CursorTextView: NSTextView {
     
     // MARK: - Selection Toolbar Properties
     var selectionToolbarController = SelectionToolbarController.shared
+
+    // Large-file mode: trên ngưỡng này thì tắt các việc nặng mỗi keystroke
+    // (snapshot EditFade, caret animation, autocomplete sync, spellcheck).
+    // Check O(1) qua textStorage.length — không đếm dòng/scan text.
+    // 300k UTF-16 units ≈ 7-8k dòng văn bản thường (vault cap là 5k dòng,
+    // nên chủ yếu ảnh hưởng file external lớn như 40k dòng).
+    static let largeDocumentLengthThreshold = 300_000
+    var isLargeDocument: Bool {
+        (textStorage?.length ?? string.utf16.count) > Self.largeDocumentLengthThreshold
+    }
+
+    // Medium-file mode (~8k từ / 50k UTF-16): animation GIỮ NGUYÊN, chỉ debounce
+    // các việc nặng không phải animation (search chunked-async, stats throttle,
+    // spellcheck theo idle, autocomplete debounce). Check O(1) như large.
+    static let mediumDocumentLengthThreshold = 50_000
+    var isMediumOrLargeDocument: Bool {
+        (textStorage?.length ?? string.utf16.count) > Self.mediumDocumentLengthThreshold
+    }
+
+    // Spellcheck debounce cho file vừa (large đã tắt hẳn trong applySpellcheckSettings).
+    var spellResumeWork: DispatchWorkItem?
     
     // Flag to track if selection is from search navigation
     var isNavigatingSearch: Bool = false
+
+    // Nhớ lần selection trước có phải bôi đen không — chỉ snap caret 1 lần khi
+    // vừa thoát selection (drag/chọn vùng xong), còn gõ hay di chuyển lúc đã
+    // collapsed thì giữ lastCursorRect để caret slide mượt từng bước.
+    // (Reset .zero mỗi phím gõ là mất animation slide — shouldSnapCaret snap
+    // ngay khi old == .zero.)
+    var lastSelectionWasNonEmpty = false
 
     // Pending todo toggle (click vs drag-select disambiguation)
     var pendingTodoCharIndex: Int?
@@ -141,6 +176,9 @@ class CursorTextView: NSTextView {
         if selectedRange().length > 0 {
             hideCaretLayer()
             lastCursorRect = .zero
+            // Đánh dấu để khi selection collapse lại thì snap 1 lần về đầu
+            // active (double-guard với updateCaretVisibilityForSelection).
+            lastSelectionWasNonEmpty = true
             return
         }
         // We handle blinking ourselves with the timer, so ignore the flag parameter
@@ -314,16 +352,31 @@ class CursorTextView: NSTextView {
         // TRƯỚC super: chụp nền nơi chữ sắp hiện để làm màn reveal —
         // sau super chữ đã vào rồi, chụp lúc đó không còn nền nữa.
         // Chỉ gõ nối cuối dòng, chuỗi ngắn, không xuống dòng, không IME.
+        // File lớn: bỏ snapshot (bitmap rep + cacheDisplay mỗi phím là frame drop).
         let preSel = selectedRange()
+        let largeDoc = isLargeDocument
         let coverPlan: (CGImage, NSRect)? =
-            (replacementRange.length == 0 && preSel.length == 0
-             && str.utf16.count <= 4 && !hasMarkedText()
-             && str.rangeOfCharacter(from: .newlines) == nil)
+            (!largeDoc
+             && replacementRange.length == 0 && preSel.length == 0
+              && str.utf16.count <= 4 && !hasMarkedText()
+              && str.rangeOfCharacter(from: .newlines) == nil)
             ? planInsertCover(str, at: preSel.location) : nil
 
         super.insertText(insertString, replacementRange: replacementRange)
 
-        if let plan = coverPlan {
+        // IME đang compose (Telex/VNI): selectedRange là marked range tạm,
+        // flash/suggestion lúc này tính sai rect + ép layout giữa composition
+        // → con trỏ nhảy. Bỏ qua, bản commit cuối sẽ chạy lại với marked=false.
+        guard !hasMarkedText() else { return }
+
+        if largeDoc {
+            // File lớn: chỉ update suggestion rẻ (đã tự gate bên trong), bỏ flash.
+            if str.rangeOfCharacter(from: CharacterSet.alphanumerics) == nil {
+                hideSuggestion()
+            } else {
+                updateSuggestion()
+            }
+        } else if let plan = coverPlan {
             showInsertCover(plan) // chữ mờ dần vào cùng nhịp caret
         } else if str.rangeOfCharacter(from: .newlines) == nil {
             // Bỏ qua \n: rect của ký tự xuống dòng rộng full-line,
@@ -366,8 +419,11 @@ class CursorTextView: NSTextView {
         discardGhostBeforeEdit()
         // Snapshot vùng sắp mất TRƯỚC khi xóa — sau super chữ đã đi rồi,
         // chụp lúc đó chỉ được nền trống nên mất fade.
+        // File lớn: bỏ snapshot, xóa thẳng.
+        let largeDoc = isLargeDocument
         var doomedImage: CGImage?
         var doomedRect: NSRect?
+        if !largeDoc {
         let sel = selectedRange()
         let ns = string as NSString
         let target: NSRange?
@@ -384,6 +440,7 @@ class CursorTextView: NSTextView {
         if let r = target, let rect = rectForCharacterRange(r) {
             doomedRect = rect
             doomedImage = snapshotExcludingCaret(of: rect)
+        }
         }
         super.deleteBackward(sender)
         if let img = doomedImage, let r = doomedRect {
@@ -419,6 +476,9 @@ class CursorTextView: NSTextView {
         guard cursorLayer != nil else { return }
         if selectedRange().length > 0 {
             hideCaretLayer()
+            // Nhớ để khi selection collapse lại thì snap 1 lần về đầu active,
+            // thay vì trượt dài từ anchor cũ.
+            lastSelectionWasNonEmpty = true
         } else if window?.firstResponder == self {
             cursorVisible = true
             setCaretOpacity(1, animated: false)
@@ -429,8 +489,15 @@ class CursorTextView: NSTextView {
                     startBlinkTimer()
                 }
             }
-            lastCursorRect = .zero
-            needsDisplay = true
+            // Chỉ reset khi VỪA THOÁT selection: caret cần đậu ngay đầu active.
+            // Gõ hay di chuyển lúc vốn đã collapsed thì GIỮ lastCursorRect để
+            // drawInsertionPoint slide mượt — reset mỗi phím là mất animation
+            // (shouldSnapCaret snap ngay khi old == .zero).
+            if lastSelectionWasNonEmpty {
+                lastSelectionWasNonEmpty = false
+                lastCursorRect = .zero
+                needsDisplay = true
+            }
         }
     }
 
@@ -562,7 +629,19 @@ class CursorTextView: NSTextView {
         // cached NSRanges are stale -> force re-search on next updateHighlights().
         if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             isSearchComplete = false
+            // Phân biệt gõ-trong-doc (debounce, giữ highlights cũ) với đổi-query
+            // (search ngay). SearchHighlighting đọc flag này.
+            searchNeedsRefreshDueToEdit = true
+            // Edit mới hủy background search đang chạy trên snapshot cũ (ranges stale)
+            // + vô hiệu mọi hop-main còn bay của nó bằng token mới.
+            searchTask?.cancel()
+            searchToken = UUID()
+            isSearching = false
         }
+        // File vừa: continuous spellcheck recheck mỗi keystroke → debounce theo
+        // idle (underline hiện trễ ~0.8s, không đổi visual cuối). File lớn đã tắt
+        // hẳn, file nhỏ giữ nguyên hành vi.
+        scheduleSpellcheckDebounce()
     }
     
     @objc func debouncedUpdateHighlights() {
@@ -580,10 +659,10 @@ class CursorTextView: NSTextView {
         }
         // Prevent multiple rapid scroll calls that cause flickering
         guard !isScrolling else { return }
-        
+
         isScrolling = true
         super.scrollRangeToVisible(range)
-        
+
         // Reset flag after a short delay to batch scroll requests
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             self?.isScrolling = false
@@ -641,6 +720,16 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     // Cursor position callback
     var onCursorLineChanged: ((Int) -> Void)? = nil
 
+    // Typing callback: textView là source of truth, ViewModel update silent
+    // (không re-render SwiftUI mỗi phím). Giữ `text` Binding cho chiều đọc
+    // (updateNSView phát hiện đổi note/file ngoài).
+    var onTextEdited: ((String) -> Void)? = nil
+
+    // External text revision từ ViewModel: updateNSView chỉ so chuỗi khi số này
+    // đổi (ghi ngoài), lúc gõ revision đứng yên → skip O(1). Mặc định 0 = lần
+    // đầu luôn sync để chốt version.
+    var textVersion: UInt64 = 0
+
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -663,6 +752,9 @@ struct ThickCursorTextEditor: NSViewRepresentable {
 
         let layoutManager = CursorLayoutManager()
         layoutManager.cursorWidth = cursorWidth
+        // File lớn: chỉ layout vùng visible + lân cận, không dàn cả 40k dòng
+        // mỗi lần edit (mặc định NSLayoutManager layout contiguous).
+        layoutManager.allowsNonContiguousLayout = true
 
         // Plain text storage — no markdown rendering (removed for large-file performance)
         let textStorage = NSTextStorage()
@@ -761,23 +853,38 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? CursorTextView else { return }
 
-        // Compare ghost-free so an idle preview never triggers a reset loop.
-        let realString = textView.stringWithoutGhost()
-        if realString != text {
-            textView.discardGhostBeforeEdit()
-            let selectedRange = textView.selectedRange()
-            textView.string = text
-            let safeLocation = min(selectedRange.location, text.utf16.count)
-            let safeLength = min(selectedRange.length, text.utf16.count - safeLocation)
-            textView.setSelectedRange(NSRange(location: safeLocation, length: safeLength))
-            // Nội dung đổi ngầm (replace/đổi note/undo ngoài) -> ranges cũ sai lệch
-            textView.isSearchComplete = false
-            // Set trực tiếp bypass NSText.didChangeNotification -> báo ruler rebuild cache
-            context.coordinator.rulerView?.invalidateCache()
-            // set string xóa attributes -> phủ lại spacing 1 lần
-            if let ts = textView.textStorage, ts.length > 0 {
-                ts.addAttribute(.paragraphStyle, value: paragraphStyle(fontSize: fontSize), range: NSRange(location: 0, length: ts.length))
+        // Revision-skip: gõ trong editor đi đường draft silent (revision không đổi)
+        // → bỏ qua string-compare + copy O(N) mỗi SwiftUI render (mỗi keystroke
+        // render nhiều lần: cursor line, stats, search count...). Chỉ sync khi có
+        // ghi ngoài (đổi note/file, reload đĩa, replace) — lúc đó ViewModel bump.
+        if context.coordinator.lastSeenVersion != textVersion {
+            // Compare ghost-free so an idle preview never triggers a reset loop.
+            // Đang IME compose (Telex/VNI) thì KHÔNG reset string: set string giữa
+            // chừng hủy composition + nhảy caret về cuối marked range.
+            let realString = textView.stringWithoutGhost()
+            if realString != text && !textView.hasMarkedText() {
+                textView.discardGhostBeforeEdit()
+                let selectedRange = textView.selectedRange()
+                textView.string = text
+                let safeLocation = min(selectedRange.location, text.utf16.count)
+                let safeLength = min(selectedRange.length, text.utf16.count - safeLocation)
+                textView.setSelectedRange(NSRange(location: safeLocation, length: safeLength))
+                // Nội dung đổi ngầm (replace/đổi note/undo ngoài) -> ranges cũ sai lệch
+                textView.isSearchComplete = false
+                // Set trực tiếp bypass NSText.didChangeNotification -> báo ruler rebuild cache
+                context.coordinator.rulerView?.invalidateCache()
+                // set string xóa attributes -> phủ lại spacing 1 lần
+                if let ts = textView.textStorage, ts.length > 0 {
+                    ts.addAttribute(.paragraphStyle, value: paragraphStyle(fontSize: fontSize), range: NSRange(location: 0, length: ts.length))
+                }
+                context.coordinator.lastSeenVersion = textVersion
+            } else if realString == text {
+                // Khớp rồi (vd commit draft đổ vào model đúng nội dung textView
+                // đang giữ) → chốt version, các render sau skip O(1).
+                context.coordinator.lastSeenVersion = textVersion
             }
+            // else: IME đang compose + text ngoài khác → giữ version cũ để thử
+            // lại ở render sau, không để lọt mất lần sync ngoài.
         }
 
         textView.cursorWidth = cursorWidth
@@ -879,9 +986,18 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     }
 
     private func applyParagraphSpacing(_ textView: CursorTextView, fontSize: Double) {
+        // Không sờ typingAttributes giữa IME compose + không set lại khi
+        // spacing y hệt: mỗi lần gán typingAttributes giữa chừng là một lần
+        // AppKit tính lại caret → gõ nhanh thấy nhảy.
+        // ponytail: early-return, không abstraction mới.
+        if textView.hasMarkedText() { return }
         let style = paragraphStyle(fontSize: fontSize)
-        // Cheap check: chỉ phủ lại storage khi spacing đổi (tránh full-scan mỗi keystroke)
         let current = textView.defaultParagraphStyle
+        let typingSpacing = (textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle)?.paragraphSpacing
+        if current?.paragraphSpacing == style.paragraphSpacing
+            && current?.lineSpacing == style.lineSpacing
+            && typingSpacing == style.paragraphSpacing { return }
+        // Cheap check: chỉ phủ lại storage khi spacing đổi (tránh full-scan mỗi keystroke)
         textView.defaultParagraphStyle = style
         var attrs = textView.typingAttributes
         attrs[.paragraphStyle] = style
@@ -897,6 +1013,8 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         fileprivate weak var textView: CursorTextView?
         var lastSearchIndex: Int = 0
         var rulerView: LineNumberRulerView?
+        // Revision đã sync lần cuối (nil = chưa sync lần nào → sync ngay).
+        var lastSeenVersion: UInt64?
 
         init(_ parent: ThickCursorTextEditor) {
             self.parent = parent
@@ -928,7 +1046,11 @@ struct ThickCursorTextEditor: NSViewRepresentable {
                cursorView.isApplyingGhost || cursorView.ghostRange != nil {
                 return
             }
-            parent.text = textView.string
+            if let onTextEdited = parent.onTextEdited {
+                onTextEdited(textView.string)
+            } else {
+                parent.text = textView.string
+            }
         }
         
         func textViewDidChangeSelection(_ notification: Notification) {

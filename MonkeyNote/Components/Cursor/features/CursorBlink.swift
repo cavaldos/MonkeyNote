@@ -18,25 +18,30 @@ extension CursorTextView {
 
     func setCaretOpacity(_ value: Float, animated: Bool) {
         guard let layer = cursorLayer else { return }
-        // Đọc opacity đang thấy để fade tiếp — tránh chớp khi toggle đúng lúc slide
-        let visualOpacity = layer.presentation()?.opacity ?? layer.opacity
-        layer.removeAnimation(forKey: "caretBlink")
-        if animated && !caretReducedMotion {
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = visualOpacity
-            fade.toValue = value
-            fade.duration = Self.caretBlinkFade
-            fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            fade.isRemovedOnCompletion = true
-            fade.fillMode = .forwards
-            layer.opacity = value
-            layer.add(fade, forKey: "caretBlink")
-        } else {
+        if !animated || caretReducedMotion {
+            // Model đã đúng giá trị → khỏi transaction (mũi tên/gõ gọi liên tục).
+            guard layer.opacity != value else { return }
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             layer.opacity = value
             CATransaction.commit()
+            return
         }
+        // Đọc opacity đang thấy để fade tiếp — tránh chớp khi toggle đúng lúc slide.
+        // Chỉ đọc presentation khi thật sự animate (sync render server, đắt).
+        let visualOpacity = layer.presentation()?.opacity ?? layer.opacity
+        guard visualOpacity != value || layer.opacity != value
+                || layer.animation(forKey: "caretBlink") == nil else { return }
+        layer.removeAnimation(forKey: "caretBlink")
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = visualOpacity
+        fade.toValue = value
+        fade.duration = Self.caretBlinkFade
+        fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        fade.isRemovedOnCompletion = true
+        fade.fillMode = .forwards
+        layer.opacity = value
+        layer.add(fade, forKey: "caretBlink")
     }
 
     func startBlinkTimer() {

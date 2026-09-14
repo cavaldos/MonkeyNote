@@ -59,6 +59,14 @@ extension CursorTextView {
     }
 
     func updateSuggestion() {
+        // IME compose (Telex/VNI): đừng sờ ghost layer/layout giữa chừng → nhảy caret.
+        guard !hasMarkedText() else { return }
+        // File lớn: NSSpellChecker.completions chạy sync trên main thread mỗi
+        // keystroke → tắt hẳn, gõ mượt quan trọng hơn gợi ý.
+        guard !isLargeDocument else {
+            hideSuggestion()
+            return
+        }
         // Check if autocomplete is enabled
         guard autocompleteEnabled else {
             hideSuggestion()
@@ -70,6 +78,20 @@ extension CursorTextView {
 
         // Drop stale preview immediately (no delay for hiding)
         clearInlineGhost()
+
+        // File vừa (~8k từ): chèn/xóa ghost = 2 storage-edit + layout mỗi phím
+        // → debounce 0.12s, gõ burst thì không hiện, dừng lại mới hiện.
+        // Visual ghost giữ nguyên, chỉ thêm trễ khi gõ nhanh.
+        if isMediumOrLargeDocument, autocompleteDelay <= 0 {
+            suggestionTask = Task {
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    performSuggestionUpdate()
+                }
+            }
+            return
+        }
 
         // If delay is 0, show immediately
         if autocompleteDelay <= 0 {
