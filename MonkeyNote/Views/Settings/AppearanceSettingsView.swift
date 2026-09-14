@@ -64,6 +64,7 @@ struct AppearanceSettingsView: View {
     @AppStorage("note.cursorAnimationDuration") private var cursorAnimationDuration: Double = 0.15
     @AppStorage("note.vibrancyEnabled") private var vibrancyEnabled: Bool = true
     @AppStorage("note.vibrancyMaterial") private var vibrancyMaterial: String = "hudWindow"
+    @AppStorage("note.showLineNumbers") private var showLineNumbers: Bool = true
 
     private let defaultFonts = ["monospaced", "rounded", "serif"]
 
@@ -156,6 +157,12 @@ struct AppearanceSettingsView: View {
                         Slider(value: $cursorWidth, in: 2...6, step: 1)
                             .frame(maxWidth: 250)
                     }
+                }
+            }
+
+            SettingsSection("Editor") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Show Line Numbers", isOn: $showLineNumbers)
                 }
             }
             

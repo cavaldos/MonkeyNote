@@ -395,7 +395,7 @@ class CursorTextView: NSTextView {
     
     override func layout() {
         super.layout()
-        
+
         // Only update search highlights if search is active
         guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
@@ -466,6 +466,9 @@ struct ThickCursorTextEditor: NSViewRepresentable {
     var autocompleteOpacity: Double
     var suggestionMode: String
     var horizontalPadding: CGFloat = 0
+
+    // Line numbers
+    var showLineNumbers: Bool = true
     
     // Double-tap navigation
     var doubleTapNavigationEnabled: Bool = true
@@ -532,6 +535,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.backgroundColor = .clear
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: horizontalPadding, height: 0)
+        textView.textContainer?.lineFragmentPadding = 0 // số dòng sát chữ (mặc định 5pt)
         
         // Disable automatic text substitution features
         textView.isAutomaticQuoteSubstitutionEnabled = false // disable "smart quotes"
@@ -577,6 +581,17 @@ struct ThickCursorTextEditor: NSViewRepresentable {
 
         textView.delegate = context.coordinator
         textView.string = text
+
+        // Setup line number ruler view
+        if showLineNumbers {
+            scrollView.hasVerticalRuler = true
+            scrollView.rulersVisible = true
+            let rulerView = LineNumberRulerView(textView: textView, scrollView: scrollView)
+            rulerView.updateColors(isDarkMode: isDarkMode)
+            rulerView.updateFont(font)
+            scrollView.verticalRulerView = rulerView
+            context.coordinator.rulerView = rulerView
+        }
 
         scrollView.documentView = textView
         context.coordinator.textView = textView
@@ -645,6 +660,9 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         if textView.textColor != textColor {
             textView.textColor = textColor
         }
+
+        // Update line number ruler view
+        updateRulerView(scrollView: scrollView, context: context, font: font)
         
         // Check if search index changed and navigate to match
         let previousIndex = context.coordinator.lastSearchIndex
@@ -662,6 +680,28 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         } else if !textView.lastSearchQuery.isEmpty || !textView.highlightLayers.isEmpty {
             // Clear stale search layers once when search is closed
             textView.updateHighlights()
+        }
+    }
+
+    private func updateRulerView(scrollView: NSScrollView, context: Context, font: NSFont) {
+        if showLineNumbers {
+            if let rulerView = context.coordinator.rulerView {
+                rulerView.updateColors(isDarkMode: isDarkMode)
+                rulerView.updateFont(font)
+                rulerView.needsDisplay = true
+            } else {
+                guard let textView = scrollView.documentView as? CursorTextView else { return }
+                let rulerView = LineNumberRulerView(textView: textView, scrollView: scrollView)
+                rulerView.updateColors(isDarkMode: isDarkMode)
+                rulerView.updateFont(font)
+                scrollView.verticalRulerView = rulerView
+                scrollView.hasVerticalRuler = true
+                scrollView.rulersVisible = true
+                context.coordinator.rulerView = rulerView
+            }
+        } else {
+            scrollView.rulersVisible = false
+            scrollView.hasVerticalRuler = false
         }
     }
 
@@ -691,6 +731,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         var parent: ThickCursorTextEditor
         fileprivate weak var textView: CursorTextView?
         var lastSearchIndex: Int = 0
+        var rulerView: LineNumberRulerView?
 
         init(_ parent: ThickCursorTextEditor) {
             self.parent = parent

@@ -155,6 +155,11 @@ final class ContentViewModel {
         set { UserDefaults.standard.set(newValue, forKey: "note.vibrancyMaterial") }
     }
 
+    var showLineNumbers: Bool {
+        get { UserDefaults.standard.object(forKey: "note.showLineNumbers") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "note.showLineNumbers") }
+    }
+
     var windowAlwaysOnTop: Bool = UserDefaults.standard.object(forKey: "note.windowAlwaysOnTop") as? Bool ?? false {
         didSet {
             UserDefaults.standard.set(windowAlwaysOnTop, forKey: "note.windowAlwaysOnTop")
