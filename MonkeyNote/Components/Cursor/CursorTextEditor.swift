@@ -403,6 +403,15 @@ class CursorTextView: NSTextView {
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(debouncedUpdateHighlights), object: nil)
         perform(#selector(debouncedUpdateHighlights), with: nil, afterDelay: 0.08)
     }
+
+    override func didChangeText() {
+        super.didChangeText()
+        // Document edited (type/delete/paste/undo) while search is active:
+        // cached NSRanges are stale -> force re-search on next updateHighlights().
+        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            isSearchComplete = false
+        }
+    }
     
     @objc func debouncedUpdateHighlights() {
         updateHighlights()
@@ -584,6 +593,8 @@ struct ThickCursorTextEditor: NSViewRepresentable {
             let safeLocation = min(selectedRange.location, text.utf16.count)
             let safeLength = min(selectedRange.length, text.utf16.count - safeLocation)
             textView.setSelectedRange(NSRange(location: safeLocation, length: safeLength))
+            // Nội dung đổi ngầm (replace/đổi note/undo ngoài) -> ranges cũ sai lệch
+            textView.isSearchComplete = false
             // set string xóa attributes -> phủ lại spacing 1 lần
             if let ts = textView.textStorage, ts.length > 0 {
                 ts.addAttribute(.paragraphStyle, value: paragraphStyle(fontSize: fontSize), range: NSRange(location: 0, length: ts.length))

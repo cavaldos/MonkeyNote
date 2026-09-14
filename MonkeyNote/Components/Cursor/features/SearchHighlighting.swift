@@ -34,13 +34,16 @@ extension CursorTextView {
             return
         }
         
-        // If we don't have all matches yet, perform background search first
-        if !isSearchComplete && allMatchRanges.isEmpty {
+        // Document may have been edited since last search (same query, stale
+        // NSRanges) — didChangeText() marks isSearchComplete = false in that case.
+        let needsResearch = !isSearchComplete
+        if needsResearch {
             performFullSearch(query: query, in: text)
         }
-        
-        // Update visible highlights
-        updateVisibleHighlights()
+
+        // Update visible highlights (force full redraw after re-search,
+        // otherwise viewport cache would keep stale layer frames)
+        updateVisibleHighlights(force: needsResearch)
     }
     
     /// Perform full document search (synchronous for small docs, stored for navigation)
@@ -78,13 +81,14 @@ extension CursorTextView {
     }
     
     /// Update highlights only for matches visible in viewport
-    func updateVisibleHighlights() {
+    func updateVisibleHighlights(force: Bool = false) {
         guard let layoutManager = layoutManager, let textContainer = textContainer else { return }
         
         let visibleRect = self.visibleRect
         
-        // Skip if viewport hasn't changed significantly
-        if abs(visibleRect.origin.y - lastVisibleRect.origin.y) < 10 &&
+        // Skip if viewport hasn't changed significantly (unless forced after re-search)
+        if !force &&
+           abs(visibleRect.origin.y - lastVisibleRect.origin.y) < 10 &&
            abs(visibleRect.size.height - lastVisibleRect.size.height) < 10 &&
            !highlightLayers.isEmpty {
             // Just update current match highlighting
@@ -142,15 +146,15 @@ extension CursorTextView {
                 
                 if isCurrentMatch {
                     highlightLayer.backgroundColor = NSColor.orange.withAlphaComponent(0.6).cgColor
-                    highlightLayer.borderWidth = 1.5
-                    highlightLayer.borderColor = NSColor.orange.withAlphaComponent(0.8).cgColor
+                    highlightLayer.borderWidth = 0
+                    highlightLayer.borderColor = nil
                     self.currentMatchLayers.append(highlightLayer)
                 } else {
                     highlightLayer.backgroundColor = NSColor.yellow.withAlphaComponent(0.3).cgColor
                     highlightLayer.borderWidth = 0
                     highlightLayer.borderColor = nil
                 }
-                highlightLayer.cornerRadius = 3
+                highlightLayer.cornerRadius = 2
                 highlightLayer.frame = paddedRect.offsetBy(dx: origin.x, dy: origin.y)
                 
                 CATransaction.commit()
@@ -197,8 +201,9 @@ extension CursorTextView {
                     CATransaction.begin()
                     CATransaction.setDisableActions(true)
                     layer.backgroundColor = NSColor.orange.withAlphaComponent(0.6).cgColor
-                    layer.borderWidth = 1.5
-                    layer.borderColor = NSColor.orange.withAlphaComponent(0.8).cgColor
+                    layer.borderWidth = 0
+                    layer.borderColor = nil
+                    layer.cornerRadius = 2
                     layer.frame = targetFrame
                     CATransaction.commit()
                     self.currentMatchLayers.append(layer)
