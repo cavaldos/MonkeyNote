@@ -94,12 +94,14 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
         panel.hasShadow = true
         panel.level = NSWindow.Level.floating
         
-        // Background view
-        let bgView = NSView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: menuHeight))
+        // Background view (blurred so text behind the popup isn't readable)
+        let bgView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: menuHeight))
+        bgView.material = .hudWindow
+        bgView.blendingMode = .behindWindow
+        bgView.state = .active
         bgView.wantsLayer = true
         bgView.layer?.cornerRadius = 10
         bgView.layer?.masksToBounds = true
-        bgView.layer?.backgroundColor = NSColor(red: 38/255, green: 38/255, blue: 38/255, alpha: 0.98).cgColor
         bgView.layer?.borderWidth = 0.5
         bgView.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
         
@@ -286,250 +288,410 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
     }
     
     // MARK: - Build Attributed Content (Dictionary.app style)
-    
+
+    private func serifFont(size: CGFloat, bold: Bool = false, italic: Bool = false) -> NSFont {
+        let name: String
+        if bold && italic { name = "Georgia-BoldItalic" }
+        else if bold { name = "Georgia-Bold" }
+        else if italic { name = "Georgia-Italic" }
+        else { name = "Georgia" }
+        return NSFont(name: name, size: size) ?? NSFont.systemFont(ofSize: size, weight: bold ? .bold : .regular)
+    }
+
     private func buildAttributedContent(word: String, definition: String?) -> NSAttributedString {
         let result = NSMutableAttributedString()
-        
-        // Word title (large, bold)
+
+        // Word title (serif, bold) + pronunciation on same line
         let wordAttr = NSAttributedString(
             string: word.lowercased(),
             attributes: [
-                .font: NSFont.systemFont(ofSize: 22, weight: .bold),
+                .font: serifFont(size: 23, bold: true),
                 .foregroundColor: NSColor.white
             ]
         )
         result.append(wordAttr)
-        
+
         guard let definition = definition else {
-            // No definition found
             result.append(NSAttributedString(string: "\n\n"))
-            let noDefAttr = NSAttributedString(
+            result.append(NSAttributedString(
                 string: "No definition found",
                 attributes: [
                     .font: NSFont.systemFont(ofSize: 13),
                     .foregroundColor: NSColor.white.withAlphaComponent(0.5)
                 ]
-            )
-            result.append(noDefAttr)
+            ))
             return result
         }
-        
-        // Parse and format the definition
+
         let parsed = parseDefinition(definition, word: word)
-        
-        // Pronunciation (if found)
+
         if !parsed.pronunciation.isEmpty {
-            let pronAttr = NSAttributedString(
+            result.append(NSAttributedString(
                 string: "  " + parsed.pronunciation,
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 14),
+                    .font: serifFont(size: 14),
                     .foregroundColor: NSColor.white.withAlphaComponent(0.5)
                 ]
-            )
-            result.append(pronAttr)
+            ))
         }
-        
         result.append(NSAttributedString(string: "\n"))
-        
-        // Parts of speech and definitions
+
         for part in parsed.parts {
             result.append(NSAttributedString(string: "\n"))
-            
-            // Part of speech (e.g., "danh từ", "động từ")
-            let posAttr = NSAttributedString(
-                string: part.partOfSpeech,
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-                    .foregroundColor: NSColor.systemGray
-                ]
-            )
-            result.append(posAttr)
-            result.append(NSAttributedString(string: "\n"))
-            
-            // Definitions with numbers
+            // POS label e.g. "phó từ" — grey, indented
+            if !part.partOfSpeech.isEmpty {
+                result.append(NSAttributedString(
+                    string: "  " + part.partOfSpeech + "\n",
+                    attributes: [
+                        .font: NSFont.systemFont(ofSize: 13),
+                        .foregroundColor: NSColor.systemGray
+                    ]
+                ))
+            }
             for (index, def) in part.definitions.enumerated() {
-                let number = "\(index + 1) "
-                let numberAttr = NSAttributedString(
-                    string: number,
+                // Sense number (grey) + definition (serif bold white)
+                let numAttr = NSAttributedString(
+                    string: "    \(index + 1) ",
                     attributes: [
                         .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                        .foregroundColor: NSColor.white.withAlphaComponent(0.6)
+                        .foregroundColor: NSColor.white.withAlphaComponent(0.45)
                     ]
                 )
-                result.append(numberAttr)
-                
-                // Main definition text
-                let defAttr = NSAttributedString(
-                    string: def.text,
+                result.append(numAttr)
+                result.append(NSAttributedString(
+                    string: def.text + "\n",
                     attributes: [
-                        .font: NSFont.systemFont(ofSize: 14, weight: .medium),
+                        .font: serifFont(size: 14, bold: true),
                         .foregroundColor: NSColor.white
                     ]
-                )
-                result.append(defAttr)
-                result.append(NSAttributedString(string: "\n"))
-                
-                // Examples (italic, indented)
+                ))
+                // Examples: EN line (grey italic) + VI line (white) below
                 for example in def.examples {
-                    let bulletAttr = NSAttributedString(
-                        string: "    ▸ ",
+                    result.append(NSAttributedString(
+                        string: "      ▸ ",
                         attributes: [
-                            .font: NSFont.systemFont(ofSize: 12),
+                            .font: NSFont.systemFont(ofSize: 11),
                             .foregroundColor: NSColor.white.withAlphaComponent(0.4)
                         ]
-                    )
-                    result.append(bulletAttr)
-                    
-                    let exampleAttr = NSAttributedString(
-                        string: example,
+                    ))
+                    result.append(NSAttributedString(
+                        string: example.en + "\n",
                         attributes: [
-                            .font: NSFontManager.shared.convert(NSFont.systemFont(ofSize: 13), toHaveTrait: .italicFontMask),
+                            .font: serifFont(size: 13, italic: true),
                             .foregroundColor: NSColor.white.withAlphaComponent(0.6)
                         ]
-                    )
-                    result.append(exampleAttr)
-                    result.append(NSAttributedString(string: "\n"))
+                    ))
+                    if let vi = example.vi, !vi.isEmpty {
+                        result.append(NSAttributedString(
+                            string: "          " + vi + "\n",
+                            attributes: [
+                                .font: serifFont(size: 13.5),
+                                .foregroundColor: NSColor.white.withAlphaComponent(0.92)
+                            ]
+                        ))
+                    }
                 }
             }
         }
-        
-        // If no structured parts found, show raw definition
-        if parsed.parts.isEmpty {
-            let rawAttr = NSAttributedString(
+
+        // Synonyms / antonyms sections
+        if let syn = parsed.synonyms, !syn.isEmpty {
+            result.append(NSAttributedString(string: "\n"))
+            result.append(NSAttributedString(
+                string: "  TỪ ĐỒNG NGHĨA\n",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.45)
+                ]
+            ))
+            result.append(NSAttributedString(
+                string: "    " + syn + "\n",
+                attributes: [
+                    .font: serifFont(size: 13.5),
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.92)
+                ]
+            ))
+        }
+        if let ant = parsed.antonyms, !ant.isEmpty {
+            result.append(NSAttributedString(string: "\n"))
+            result.append(NSAttributedString(
+                string: "  TỪ TRÁI NGHĨA\n",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.45)
+                ]
+            ))
+            result.append(NSAttributedString(
+                string: "    " + ant + "\n",
+                attributes: [
+                    .font: serifFont(size: 13.5),
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.92)
+                ]
+            ))
+        }
+
+        // Fallback: unstructured raw text
+        if parsed.parts.isEmpty && parsed.synonyms == nil && parsed.antonyms == nil {
+            result.append(NSAttributedString(string: "\n"))
+            result.append(NSAttributedString(
                 string: parsed.rawText,
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 13),
+                    .font: serifFont(size: 13),
                     .foregroundColor: NSColor.white.withAlphaComponent(0.85)
                 ]
-            )
-            result.append(rawAttr)
+            ))
         }
-        
+
         return result
     }
     
     // MARK: - Parse Definition
-    
+
     private struct ParsedDefinition {
         var pronunciation: String = ""
         var parts: [PartOfSpeech] = []
+        var synonyms: String?
+        var antonyms: String?
         var rawText: String = ""
     }
-    
+
     private struct PartOfSpeech {
         var partOfSpeech: String
         var definitions: [Definition]
     }
-    
+
     private struct Definition {
         var text: String
-        var examples: [String]
+        var examples: [DictExample]
     }
-    
+
+    private struct DictExample {
+        var en: String
+        var vi: String?
+    }
+
+    /// Vietnamese diacritics used to detect where EN example ends / VI translation begins.
+    private let vietnameseDiacritics = CharacterSet(charactersIn: "àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ")
+
+    /// Common VI function words (lowercased, punctuation stripped) — catches leading
+    /// VI words without diacritics (e.g. "con", "toi") so the split doesn't start late.
+    private let vietnameseFunctionWords: Set<String> = [
+        "mot", "ngoi", "nha", "hom", "nay", "nguoi", "benh", "da", "hoi", "kha", "hon",
+        "dua", "be", "the", "chat", "yeu", "ot", "con", "cai", "anh", "chi", "em",
+        "toi", "ban", "ong", "ba", "no", "ho", "chung", "cua", "va", "voi", "cho",
+        "la", "thi", "ma", "khong", "co", "duoc", "trong", "ngoai", "nay", "do",
+        "nhung", "cac", "nhu", "de", "tu", "den", "rat", "lam", "nhieu", "it",
+        "cung", "van", "lai", "len", "xuong", "ra", "vao", "o", "tai", "boi", "bi",
+        "ve", "qua", "luc", "khi", "neu", "vi", "nen", "minh", "moi", "ai", "gi",
+        "sao", "the", "nao", "dau", "noi", "viec", "lam", "di", "mot", "một", "ngôi",
+        "nhà", "người", "đã", "hơi", "hơn", "đứa", "bé", "thể", "chất", "yếu", "ớt",
+        "tôi", "bạn", "của", "và", "với", "không", "được", "những", "các", "đến",
+        "rất", "nhiều", "lại", "ở", "về", "cô", "cháu", "ông", "bà", "anh", "ấy"
+    ]
+
+    /// Split "a slightly bigger house một ngôi nhà hơi lớn hơn" → (en, vi).
+    private func splitExample(_ raw: String) -> DictExample {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return DictExample(en: "", vi: nil) }
+        // No diacritics → pure English example (or untranslated).
+        if text.rangeOfCharacter(from: vietnameseDiacritics) == nil {
+            return DictExample(en: text, vi: nil)
+        }
+        let words = text.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        // Index of first word containing a VN diacritic.
+        var firstVN = words.count
+        for (i, w) in words.enumerated() {
+            if w.rangeOfCharacter(from: vietnameseDiacritics) != nil { firstVN = i; break }
+        }
+        guard firstVN < words.count else { return DictExample(en: text, vi: nil) }
+        // Walk back over ascii-only VI function words ("con", "toi", ...).
+        var split = firstVN
+        let punct = CharacterSet(charactersIn: ".,;:!?\"“”‘’'()[]")
+        while split > 0 {
+            let prev = words[split - 1].trimmingCharacters(in: punct).lowercased()
+            if prev.rangeOfCharacter(from: vietnameseDiacritics) == nil
+                && vietnameseFunctionWords.contains(prev) {
+                split -= 1
+            } else { break }
+        }
+        guard split > 0 && split < words.count else {
+            // Degenerate: whole string is Vietnamese or no English part.
+            if split == 0 { return DictExample(en: text, vi: nil) }
+            return DictExample(en: text, vi: nil)
+        }
+        let en = words[..<split].joined(separator: " ")
+        let vi = words[split...].joined(separator: " ")
+        return DictExample(en: en, vi: vi)
+    }
+
+    private func cleanList(_ raw: String) -> String {
+        // Split on newlines / semicolons / bullets, keep phrases like "to some extent" intact.
+        let parts = raw
+            .components(separatedBy: CharacterSet(charactersIn: "\n;•▸‣→▪"))
+            .flatMap { $0.components(separatedBy: ",") }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "•-–—0123456789. ")) }
+            .filter { !$0.isEmpty && $0.count > 1 }
+        // De-dupe while keeping order.
+        var seen = Set<String>()
+        var out: [String] = []
+        for p in parts {
+            let k = p.lowercased()
+            if !seen.contains(k) { seen.insert(k); out.append(p) }
+        }
+        return out.joined(separator: ", ")
+    }
+
     private func parseDefinition(_ definition: String, word: String) -> ParsedDefinition {
         var parsed = ParsedDefinition()
         parsed.rawText = definition
-        
-        // Extract pronunciation (usually in | | or / /)
-        if let pipeMatch = definition.range(of: "\\|[^|]+\\|", options: .regularExpression) {
-            parsed.pronunciation = String(definition[pipeMatch])
-        } else if let slashMatch = definition.range(of: "/[^/]+/", options: .regularExpression) {
-            parsed.pronunciation = String(definition[slashMatch])
+
+        // 1. Pronunciation: first |...| or /.../
+        if let m = definition.range(of: "\\|[^|]+\\|", options: .regularExpression) {
+            parsed.pronunciation = String(definition[m]).trimmingCharacters(in: .whitespaces)
+        } else if let m = definition.range(of: "/[^/]+/", options: .regularExpression) {
+            parsed.pronunciation = String(definition[m]).trimmingCharacters(in: .whitespaces)
         }
-        
-        // Try to identify parts of speech and definitions
-        let partsOfSpeechPatterns = [
-            ("noun", "danh từ"),
-            ("verb", "động từ"),
-            ("adjective", "tính từ"),
-            ("adverb", "trạng từ"),
-            ("pronoun", "đại từ"),
-            ("preposition", "giới từ"),
-            ("conjunction", "liên từ"),
-            ("interjection", "thán từ"),
-            ("determiner", "từ hạn định")
-        ]
-        
-        var workingText = definition
-        
-        // Remove word and pronunciation from start
-        let wordPattern = "^" + NSRegularExpression.escapedPattern(for: word) + "\\s*"
-        if let regex = try? NSRegularExpression(pattern: wordPattern, options: .caseInsensitive) {
-            workingText = regex.stringByReplacingMatches(in: workingText, options: [], range: NSRange(workingText.startIndex..., in: workingText), withTemplate: "")
+
+        var working = definition
+        // 2. Strip leading headword + pronunciation.
+        let wp = "^" + NSRegularExpression.escapedPattern(for: word) + "\\s*"
+        if let re = try? NSRegularExpression(pattern: wp, options: .caseInsensitive) {
+            working = re.stringByReplacingMatches(in: working, range: NSRange(working.startIndex..., in: working), withTemplate: "")
         }
         if !parsed.pronunciation.isEmpty {
-            workingText = workingText.replacingOccurrences(of: parsed.pronunciation, with: "")
+            working = working.replacingOccurrences(of: parsed.pronunciation, with: "")
         }
-        
-        // Look for part of speech markers
-        for (english, vietnamese) in partsOfSpeechPatterns {
-            // Check if this part of speech exists in the text
-            let patterns = [
-                "\\b\(english)\\b",
-                "\\b\(vietnamese)\\b"
-            ]
-            
-            for pattern in patterns {
-                if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
-                   regex.firstMatch(in: workingText, options: [], range: NSRange(workingText.startIndex..., in: workingText)) != nil {
-                    
-                    // Found this part of speech - extract definitions following it
-                    var part = PartOfSpeech(partOfSpeech: vietnamese, definitions: [])
-                    
-                    // For simplicity, extract numbered definitions (1, 2, 3...)
-                    let numberedPattern = "(?:^|\\s)(\\d+)[.\\s]+([^\\d]+?)(?=\\s*\\d+[.\\s]|$)"
-                    if let numRegex = try? NSRegularExpression(pattern: numberedPattern, options: [.dotMatchesLineSeparators]) {
-                        let matches = numRegex.matches(in: workingText, options: [], range: NSRange(workingText.startIndex..., in: workingText))
-                        
-                        for match in matches.prefix(5) { // Limit to 5 definitions
-                            if match.numberOfRanges >= 3,
-                               let defRange = Range(match.range(at: 2), in: workingText) {
-                                let defText = String(workingText[defRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-                                if !defText.isEmpty && defText.count > 2 {
-                                    // Look for examples (often after • or ▸ or in parentheses)
-                                    var mainDef = defText
-                                    var examples: [String] = []
-                                    
-                                    // Split by common example markers
-                                    let exampleMarkers = ["•", "▸", "‣", "→"]
-                                    for marker in exampleMarkers {
-                                        if mainDef.contains(marker) {
-                                            let parts = mainDef.components(separatedBy: marker)
-                                            mainDef = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
-                                            examples = Array(parts.dropFirst()).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                                            break
-                                        }
-                                    }
-                                    
-                                    part.definitions.append(Definition(text: mainDef, examples: examples))
-                                }
-                            }
-                        }
-                    }
-                    
-                    if !part.definitions.isEmpty {
-                        parsed.parts.append(part)
-                    }
-                    break
+        working = working.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // 3. Cut off synonym / antonym tails (handles glued "vaguelytừ trái nghĩa").
+        let synPat = "từ\\s+đồng\\s+nghĩa|đồng\\s+nghĩa|\\bsynonyms?\\b"
+        let antPat = "từ\\s+trái\\s+nghĩa|trái\\s+nghĩa|\\bantonyms?\\b"
+        var main = working
+        var synRaw: String?
+        var antRaw: String?
+        if let re = try? NSRegularExpression(pattern: synPat, options: .caseInsensitive) {
+            if let m = re.firstMatch(in: working, range: NSRange(working.startIndex..., in: working)),
+               let r = Range(m.range, in: working) {
+                main = String(working[..<r.lowerBound])
+                let tail = String(working[r.upperBound...])
+                if let re2 = try? NSRegularExpression(pattern: antPat, options: .caseInsensitive),
+                   let m2 = re2.firstMatch(in: tail, range: NSRange(tail.startIndex..., in: tail)),
+                   let r2 = Range(m2.range, in: tail) {
+                    synRaw = String(tail[..<r2.lowerBound])
+                    antRaw = String(tail[r2.upperBound...])
+                } else {
+                    synRaw = tail
                 }
             }
         }
-        
-        // If no structured parsing worked, create a simple view
-        if parsed.parts.isEmpty {
-            // Clean up raw text
-            parsed.rawText = workingText
-                .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            
-            // Limit length
-            if parsed.rawText.count > 500 {
-                let endIndex = parsed.rawText.index(parsed.rawText.startIndex, offsetBy: 500)
-                parsed.rawText = String(parsed.rawText[..<endIndex]) + "..."
+        if synRaw == nil, // no syn header — antonym may still exist alone
+           let re2 = try? NSRegularExpression(pattern: antPat, options: .caseInsensitive),
+           let m2 = re2.firstMatch(in: main, range: NSRange(main.startIndex..., in: main)),
+           let r2 = Range(m2.range, in: main) {
+            antRaw = String(main[r2.upperBound...])
+            main = String(main[..<r2.lowerBound])
+        }
+        if let s = synRaw { parsed.synonyms = cleanList(s) }
+        if let a = antRaw { parsed.antonyms = cleanList(a) }
+
+        // 4. Split main body by Vietnamese POS headers.
+        let posNames = ["ngoại động từ", "nội động từ", "trợ động từ",
+                        "danh từ", "động từ", "tính từ", "phó từ", "trạng từ",
+                        "đại từ", "giới từ", "liên từ", "thán từ", "mạo từ"]
+        let posPattern = "\\b(" + posNames.map(NSRegularExpression.escapedPattern(for:)) .joined(separator: "|") + ")\\b"
+        var sections: [(pos: String, body: String)] = []
+        if let re = try? NSRegularExpression(pattern: posPattern, options: .caseInsensitive) {
+            let matches = re.matches(in: main, range: NSRange(main.startIndex..., in: main))
+            if matches.isEmpty {
+                sections = [("", main)]
+            } else {
+                // Text before first POS (usually empty) → attach to first section.
+                for (i, m) in matches.enumerated() {
+                    guard let mr = Range(m.range(at: 1), in: main) else { continue }
+                    let pos = String(main[mr]).lowercased()
+                    let bodyStart = m.range.upperBound
+                    let bodyEnd = (i + 1 < matches.count) ? matches[i + 1].range.lowerBound : (main as NSString).length
+                    let ns = main as NSString
+                    let body = ns.substring(with: NSRange(location: bodyStart, length: bodyEnd - bodyStart))
+                    sections.append((pos, body))
+                }
+            }
+        } else {
+            sections = [("", main)]
+        }
+
+        // 5. Within each section, split numbered senses.
+        let exampleDelims = CharacterSet(charactersIn: "▸•‣→▪▹")
+        for sec in sections {
+            var senses: [Definition] = []
+            let body = sec.body
+            if let re = try? NSRegularExpression(pattern: "(?:^|\\s)(\\d+)\\s+", options: []) {
+                let allMatches = re.matches(in: body, range: NSRange(body.startIndex..., in: body))
+                // Only sequential numbers (1, 2, 3…) are sense boundaries —
+                // skips in-content numbers like "19 hàng dọc".
+                let nsBody = body as NSString
+                var matches: [NSTextCheckingResult] = []
+                var expected = 1
+                for m in allMatches {
+                    let numStr = nsBody.substring(with: m.range(at: 1))
+                    if Int(numStr) == expected {
+                        matches.append(m)
+                        expected += 1
+                    }
+                }
+                if matches.isEmpty {
+                    senses = makeSenses(from: body, delims: exampleDelims)
+                } else {
+                    let ns = body as NSString
+                    for (i, m) in matches.enumerated() {
+                        // Sense text starts after the number.
+                        let start = m.range.upperBound
+                        let end = (i + 1 < matches.count)
+                            ? matches[i + 1].range.location + 1 // include leading space in next match gap
+                            : ns.length
+                        let slice = ns.substring(with: NSRange(location: start, length: max(0, end - start)))
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        if slice.isEmpty { continue }
+                        senses.append(contentsOf: makeSenses(from: slice, delims: exampleDelims))
+                        if senses.count >= 12 { break }
+                    }
+                }
+            } else {
+                senses = makeSenses(from: body, delims: exampleDelims)
+            }
+            if !senses.isEmpty {
+                parsed.parts.append(PartOfSpeech(partOfSpeech: sec.pos, definitions: senses))
             }
         }
-        
+
+        // 6. Fallback raw text (clean, keep newlines for readability, cap length).
+        if parsed.parts.isEmpty && parsed.synonyms == nil && parsed.antonyms == nil {
+            var raw = working.replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
+            if raw.count > 600 {
+                let idx = raw.index(raw.startIndex, offsetBy: 600)
+                raw = String(raw[..<idx]) + "..."
+            }
+            parsed.rawText = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         return parsed
+    }
+
+    /// Turn a body/slice into 1+ senses by splitting off ▸-examples.
+    private func makeSenses(from text: String, delims: CharacterSet) -> [Definition] {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return [] }
+        // Split keeping first chunk as definition, rest as examples.
+        let chunks = t.components(separatedBy: delims)
+        let head = chunks[0].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !head.isEmpty else { return [] }
+        var examples: [DictExample] = []
+        for c in chunks.dropFirst() {
+            let e = c.trimmingCharacters(in: .whitespacesAndNewlines)
+            if e.count > 1 { examples.append(splitExample(e)) }
+        }
+        // ponytail: cap examples at 4 per sense, enough for popup.
+        return [Definition(text: head, examples: Array(examples.prefix(4)))]
     }
     
     func updateWord(_ word: String) {
