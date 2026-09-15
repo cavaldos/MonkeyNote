@@ -62,6 +62,7 @@ struct WindowAccessor: NSViewRepresentable {
 class VibrancyWindowConfigurator: ObservableObject {
     private weak var window: NSWindow?
     private var visualEffectView: NSVisualEffectView?
+    private var backingView: NSView?
     
     @Published var isVibrancyEnabled: Bool = UserDefaults.standard.object(forKey: "note.vibrancyEnabled") as? Bool ?? true
     @Published var materialType: String = UserDefaults.standard.string(forKey: "note.vibrancyMaterial") ?? "hudWindow"
@@ -127,35 +128,64 @@ class VibrancyWindowConfigurator: ObservableObject {
         
         if let existingView = visualEffectView {
             existingView.material = material
-            return
+        } else {
+            guard let contentView = window.contentView else { return }
+            
+            let blurView = NSVisualEffectView()
+            blurView.material = material
+            blurView.blendingMode = .behindWindow
+            blurView.state = .active
+            blurView.translatesAutoresizingMaskIntoConstraints = false
+            
+            contentView.addSubview(blurView, positioned: .below, relativeTo: contentView.subviews.first)
+            
+            NSLayoutConstraint.activate([
+                blurView.topAnchor.constraint(equalTo: contentView.topAnchor),
+                blurView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                blurView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                blurView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            ])
+            
+            visualEffectView = blurView
         }
-        
-        guard let contentView = window.contentView else { return }
-        
-        let blurView = NSVisualEffectView()
-        blurView.material = material
-        blurView.blendingMode = .behindWindow
-        blurView.state = .active
-        blurView.translatesAutoresizingMaskIntoConstraints = false
-        
-        contentView.addSubview(blurView, positioned: .below, relativeTo: contentView.subviews.first)
-        
-        NSLayoutConstraint.activate([
-            blurView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            blurView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            blurView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            blurView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-        ])
-        
-        visualEffectView = blurView
+
+        // macOS 27 (Liquid Glass): khe divider của NavigationSplitView không
+        // vẽ gì → lộ desktop sắc nét xuyên qua. Lót 1 lớp nền đục cùng tông
+        // app NGAY DƯỚI lớp blur để bịt mọi khe trong suốt; lớp blur và các
+        // column vẫn vẽ đè lên trên nên hiệu ứng kính mờ giữ nguyên.
+        if backingView == nil, let contentView = window.contentView, let blurView = visualEffectView {
+            let backing = NSView()
+            backing.wantsLayer = true
+            backing.translatesAutoresizingMaskIntoConstraints = false
+            contentView.addSubview(backing, positioned: .below, relativeTo: blurView)
+            NSLayoutConstraint.activate([
+                backing.topAnchor.constraint(equalTo: contentView.topAnchor),
+                backing.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                backing.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                backing.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            ])
+            backingView = backing
+        }
+        backingView?.layer?.backgroundColor = opaqueBackingColor().cgColor
     }
     
     private func disableVibrancy(on window: NSWindow) {
         visualEffectView?.removeFromSuperview()
         visualEffectView = nil
+        backingView?.removeFromSuperview()
+        backingView = nil
         
         window.isOpaque = true
         window.backgroundColor = NSColor.windowBackgroundColor
+    }
+
+    // Cùng tông nền đục app dùng khi tắt vibrancy — khe divider bịt lại nhìn
+    // như 1 hairline nền app, không lộ desktop.
+    private func opaqueBackingColor() -> NSColor {
+        let dark = UserDefaults.standard.object(forKey: "note.isDarkMode") as? Bool ?? true
+        return dark
+            ? NSColor(red: 49.0 / 255.0, green: 49.0 / 255.0, blue: 49.0 / 255.0, alpha: 1.0)
+            : NSColor(white: 0.97, alpha: 1.0)
     }
     
     private func getMaterial(from string: String) -> NSVisualEffectView.Material {

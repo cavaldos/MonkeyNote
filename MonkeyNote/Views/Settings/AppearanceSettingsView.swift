@@ -89,6 +89,10 @@ struct AppearanceSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 200)
+                .onChange(of: isDarkMode) { _, _ in
+                    // Đổi tông lớp lót đục dưới window (bịt khe divider macOS 27).
+                    NotificationCenter.default.post(name: .vibrancySettingChanged, object: nil)
+                }
             }
 
             SettingsSection("Font") {
