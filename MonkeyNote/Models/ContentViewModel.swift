@@ -67,6 +67,63 @@ final class ContentViewModel {
     var isChangingVault: Bool = false
     var showLargeFileAlert: Bool = false
     var largeFileInfo: (name: String, lines: Int)?
+
+    func toggleSidebar() {
+        logTap("toggle")
+        #if os(macOS)
+        let before = Self.paneWidths().map { String(format: "%.0f", $0) }.joined(separator: ",")
+        Self.appendTmp("toggle before=[\(before)]\n")
+        #endif
+        SidebarToggler.toggle()
+        #if os(macOS)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            let after = Self.paneWidths().map { String(format: "%.0f", $0) }.joined(separator: ",")
+            Self.appendTmp("toggle after=[\(after)]\n")
+        }
+        #endif
+    }
+
+    #if os(macOS)
+    static func paneWidths() -> [CGFloat] {
+        guard let win = NSApp.windows.first(where: { $0.isVisible }),
+              let root = win.contentView else { return [] }
+        func find(_ v: NSView) -> NSSplitView? {
+            if let sv = v as? NSSplitView, sv.isVertical { return sv }
+            for s in v.subviews { if let f = find(s) { return f } }
+            return nil
+        }
+        guard let sv = find(root) else { return [-1] }
+        return sv.arrangedSubviews.map { $0.frame.width }
+    }
+
+    static func appendTmp(_ s: String) {
+        let url = URL(fileURLWithPath: "/tmp/vis.txt")
+        if let d = s.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: "/tmp/vis.txt"),
+               let h = try? FileHandle(forWritingTo: url) {
+                h.seekToEndOfFile()
+                h.write(d)
+                try? h.close()
+            } else {
+                try? d.write(to: url)
+            }
+        }
+    }
+    #endif
+
+    // TẠM debug taps (xóa sau).
+    func logTap(_ name: String) {
+        guard let data = (name + "\n").data(using: .utf8) else { return }
+        let url = URL(fileURLWithPath: "/tmp/taps.txt")
+        if FileManager.default.fileExists(atPath: "/tmp/taps.txt"),
+           let h = try? FileHandle(forWritingTo: url) {
+            h.seekToEndOfFile()
+            h.write(data)
+            try? h.close()
+        } else {
+            try? data.write(to: url)
+        }
+    }
     
     // MARK: - External File State
     var externalFileURL: URL? {
@@ -137,9 +194,13 @@ final class ContentViewModel {
         set { UserDefaults.standard.set(newValue, forKey: "note.suggestionMode") }
     }
     
-    var sortOptionRaw: String {
-        get { UserDefaults.standard.string(forKey: "note.sortOption") ?? NoteSortOption.dateNewest.rawValue }
-        set { UserDefaults.standard.set(newValue, forKey: "note.sortOption") }
+    // Stored (không phải computed) để @Observable phát hiện đổi và vẽ lại list ngay.
+    // Giá trị khởi tạo đọc 1 lần từ UserDefaults, didSet ghi lại xuống đĩa.
+    var sortOption: NoteSortOption = NoteSortOption(rawValue: UserDefaults.standard.string(forKey: "note.sortOption") ?? NoteSortOption.dateNewest.rawValue) ?? .dateNewest {
+        didSet {
+            logTap("sort") // TẠM debug
+            UserDefaults.standard.set(sortOption.rawValue, forKey: "note.sortOption")
+        }
     }
     
     var doubleTapNavigationEnabled: Bool {
@@ -198,12 +259,7 @@ final class ContentViewModel {
     private let saveQueue = DispatchQueue(label: "MonkeyNote.save", qos: .utility)
     
     // MARK: - Computed Properties
-    
-    var sortOption: NoteSortOption {
-        get { NoteSortOption(rawValue: sortOptionRaw) ?? .dateNewest }
-        set { sortOptionRaw = newValue.rawValue }
-    }
-    
+        
     var isEditingExternalFile: Bool {
         externalFileURL != nil
     }
@@ -1037,6 +1093,7 @@ final class ContentViewModel {
     // MARK: - Note Operations
     
     func addNote() {
+        logTap("add") // TẠM debug
         guard let selectedFolderID = selectedFolderID,
               let folder = getFolder(folderID: selectedFolderID) else { return }
         

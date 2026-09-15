@@ -51,3 +51,22 @@ struct ThemeIconButton: View {
         .accessibilityLabel(tooltip ?? (isSelected ? "Selected" : "Not selected"))
     }
 }
+
+// MARK: - Toolbar Glass Opt-Out
+
+extension CustomizableToolbarContent {
+    /// Ẩn pill Liquid Glass hệ thống tự bọc quanh toolbar group (macOS 26+).
+    /// Mỗi item/group gọi một lần; iOS giữ nguyên để không đổi UI ngoài ý muốn.
+    @ToolbarContentBuilder
+    func withoutGlassBackground() -> some ToolbarContent {
+        #if os(macOS)
+        if #available(macOS 26, *) {
+            self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+}

@@ -70,20 +70,32 @@ struct NotesListView: View {
         .toolbarBackground(Material.ultraThinMaterial, for: .windowToolbar)
         #endif
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 8) {
-                    // Sort menu
-                    sortMenu
-                    
-                    // Add note button
-                    Button {
-                        viewModel.addNote()
-                    } label: {
-                        Image(systemName: "square.and.pencil")
-                    }
-                    .disabled(viewModel.selectedFolderID == nil)
-                }
+            ToolbarItem(id: "customSidebarToggle", placement: .navigation) {
+                ThemeIconButton(
+                    systemImage: "sidebar.leading",
+                    isSelected: false,
+                    action: { viewModel.toggleSidebar() },
+                    tooltip: "Toggle sidebar",
+                    highlightSelectionChrome: false
+                )
             }
+            .withoutGlassBackground()
+
+            ToolbarItem(id: "sortMenu", placement: .primaryAction) {
+                sortMenu
+            }
+            .withoutGlassBackground()
+
+            ToolbarItem(id: "addNote", placement: .primaryAction) {
+                // Add note button
+                Button {
+                    viewModel.addNote()
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .disabled(viewModel.selectedFolderID == nil)
+            }
+            .withoutGlassBackground()
         }
         .alert("File Too Large", isPresented: $showLargeFileAlert) {
             Button("OK", role: .cancel) { }
@@ -158,7 +170,7 @@ struct NotesListView: View {
         
         return Menu {
             Button {
-                vm.sortOptionRaw = NoteSortOption.nameAscending.rawValue
+                vm.sortOption = .nameAscending
             } label: {
                 if viewModel.sortOption == .nameAscending {
                     Label("Name A-Z", systemImage: "checkmark")
@@ -168,7 +180,7 @@ struct NotesListView: View {
             }
             
             Button {
-                vm.sortOptionRaw = NoteSortOption.nameDescending.rawValue
+                vm.sortOption = .nameDescending
             } label: {
                 if viewModel.sortOption == .nameDescending {
                     Label("Name Z-A", systemImage: "checkmark")
@@ -178,7 +190,7 @@ struct NotesListView: View {
             }
             
             Button {
-                vm.sortOptionRaw = NoteSortOption.dateNewest.rawValue
+                vm.sortOption = .dateNewest
             } label: {
                 if viewModel.sortOption == .dateNewest {
                     Label("Date Newest", systemImage: "checkmark")
@@ -188,7 +200,7 @@ struct NotesListView: View {
             }
             
             Button {
-                vm.sortOptionRaw = NoteSortOption.dateOldest.rawValue
+                vm.sortOption = .dateOldest
             } label: {
                 if viewModel.sortOption == .dateOldest {
                     Label("Date Oldest", systemImage: "checkmark")
@@ -198,7 +210,7 @@ struct NotesListView: View {
             }
             
             Button {
-                vm.sortOptionRaw = NoteSortOption.createdNewest.rawValue
+                vm.sortOption = .createdNewest
             } label: {
                 if viewModel.sortOption == .createdNewest {
                     Label("Created Newest", systemImage: "checkmark")
@@ -208,7 +220,7 @@ struct NotesListView: View {
             }
             
             Button {
-                vm.sortOptionRaw = NoteSortOption.createdOldest.rawValue
+                vm.sortOption = .createdOldest
             } label: {
                 if viewModel.sortOption == .createdOldest {
                     Label("Created Oldest", systemImage: "checkmark")

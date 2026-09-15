@@ -42,9 +42,62 @@ struct DetailEditorView: View {
             ToolbarItem(placement: .principal) {
                 Spacer()
             }
-            ToolbarItemGroup(placement: .primaryAction) {
-                toolbarContent
+            // Mỗi nút 1 item riêng (thay vì 1 HStack): hệ thống mới render
+            // đúng, và mỗi item tắt pill glass riêng.
+            #if os(macOS)
+            ToolbarItem(id: "tb.pin", placement: .primaryAction) {
+                ThemeIconButton(
+                    systemImage: viewModel.windowAlwaysOnTop ? "pin.fill" : "pin",
+                    isSelected: viewModel.windowAlwaysOnTop,
+                    action: {
+                        vm.windowAlwaysOnTop.toggle()
+                        NotificationCenter.default.post(name: .windowPinSettingChanged, object: nil)
+                    },
+                    tooltip: viewModel.windowAlwaysOnTop ? "Always on Top: ON (click to disable)" : "Always on Top: OFF (click to enable)",
+                    highlightSelectionChrome: false
+                )
             }
+            .withoutGlassBackground()
+            #endif
+            ToolbarItem(id: "tb.pomodoro", placement: .primaryAction) {
+                PomodoroTimerView()
+            }
+            .withoutGlassBackground()
+            ToolbarItem(id: "tb.rename", placement: .primaryAction) {
+                ThemeIconButton(
+                    systemImage: "pencil",
+                    isSelected: false,
+                    action: { viewModel.logTap("rename"); viewModel.startRenameSelectedNote() },
+                    tooltip: "Rename note"
+                )
+                .disabled(viewModel.selectedNoteID == nil)
+                .opacity(viewModel.selectedNoteID == nil ? 0.5 : 1.0)
+            }
+            .withoutGlassBackground()
+            ToolbarItem(id: "tb.delete", placement: .primaryAction) {
+                ThemeIconButton(
+                    systemImage: "trash",
+                    isSelected: false,
+                    action: { viewModel.deleteSelectedNote() },
+                    tooltip: "Delete note"
+                )
+                .disabled(viewModel.selectedNoteID == nil)
+                .opacity(viewModel.selectedNoteID == nil ? 0.5 : 1.0)
+            }
+            .withoutGlassBackground()
+            ToolbarItem(id: "tb.spellcheck", placement: .primaryAction) {
+                ThemeIconButton(
+                    systemImage: "text.badge.checkmark",
+                    isSelected: spellcheckEnabled,
+                    action: { viewModel.logTap("spell"); spellcheckEnabled.toggle() },
+                    tooltip: spellcheckEnabled ? "Spellcheck: ON (click to disable)" : "Spellcheck: OFF (click to enable)"
+                )
+            }
+            .withoutGlassBackground()
+            ToolbarItem(id: "tb.search", placement: .primaryAction) {
+                SearchBarView()
+            }
+            .withoutGlassBackground()
         }
     }
     
@@ -209,56 +262,5 @@ struct DetailEditorView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             #endif
         }
-    }
-    
-    // MARK: - Toolbar Content
-    
-    @ViewBuilder
-    private var toolbarContent: some View {
-        @Bindable var vm = viewModel
-
-        #if os(macOS)
-        ThemeIconButton(
-            systemImage: viewModel.windowAlwaysOnTop ? "pin.fill" : "pin",
-            isSelected: viewModel.windowAlwaysOnTop,
-            action: {
-                vm.windowAlwaysOnTop.toggle()
-                NotificationCenter.default.post(name: .windowPinSettingChanged, object: nil)
-            },
-            tooltip: viewModel.windowAlwaysOnTop ? "Always on Top: ON (click to disable)" : "Always on Top: OFF (click to enable)",
-            highlightSelectionChrome: false
-        )
-        #endif
-        
-        // Pomodoro timer
-        PomodoroTimerView()
-        
-        ThemeIconButton(
-            systemImage: "pencil",
-            isSelected: false,
-            action: { viewModel.startRenameSelectedNote() },
-            tooltip: "Rename note"
-        )
-        .disabled(viewModel.selectedNoteID == nil)
-        .opacity(viewModel.selectedNoteID == nil ? 0.5 : 1.0)
-        
-        ThemeIconButton(
-            systemImage: "trash",
-            isSelected: false,
-            action: { viewModel.deleteSelectedNote() },
-            tooltip: "Delete note"
-        )
-        .disabled(viewModel.selectedNoteID == nil)
-        .opacity(viewModel.selectedNoteID == nil ? 0.5 : 1.0)
-
-        ThemeIconButton(
-            systemImage: "text.badge.checkmark",
-            isSelected: spellcheckEnabled,
-            action: { spellcheckEnabled.toggle() },
-            tooltip: spellcheckEnabled ? "Spellcheck: ON (click to disable)" : "Spellcheck: OFF (click to enable)"
-        )
-        
-        // Search bar
-        SearchBarView()
     }
 }

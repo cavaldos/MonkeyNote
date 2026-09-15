@@ -19,6 +19,7 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             SidebarView()
+                .toolbar(removing: .sidebarToggle)
         } content: {
             NotesListView()
         } detail: {
@@ -100,6 +101,48 @@ struct ContentView: View {
 #Preview {
     ContentView()
 }
+
+#if os(macOS)
+// Tắt/mở sidebar bằng AppKit native (y hệt kéo divider tay): binding
+// columnVisibility của SwiftUI trên macOS 27 không ẩn được sidebar
+// (đo thực tế: chỉ bóp méo cột khác). SwiftUI quan sát như thao tác tay.
+enum SidebarToggler {
+    private static var savedSidebarWidth: CGFloat = 180
+
+    static func toggle() {
+        guard let win = NSApp.windows.first(where: { $0.isVisible }),
+              let root = win.contentView,
+              let sv = findSplit(in: root),
+              let sidebar = sv.arrangedSubviews.first else { return }
+        // 1) Native controller toggle (đúng thao tác hệ thống, có animation,
+        // SwiftUI quan sát như kéo divider tay)
+        var r: NSResponder? = sidebar
+        while let cur = r {
+            if let svc = cur as? NSSplitViewController,
+               let first = svc.splitViewItems.first {
+                first.animator().isCollapsed = !first.isCollapsed
+                return
+            }
+            r = cur.nextResponder
+        }
+        // 2) Dự phòng: ép divider 0 (animatable)
+        if sidebar.frame.width > 1 {
+            savedSidebarWidth = sidebar.frame.width
+            sv.animator().setPosition(0, ofDividerAt: 0)
+        } else {
+            sv.animator().setPosition(savedSidebarWidth > 1 ? savedSidebarWidth : 180, ofDividerAt: 0)
+        }
+    }
+
+    private static func findSplit(in v: NSView) -> NSSplitView? {
+        if let sv = v as? NSSplitView, sv.isVertical { return sv }
+        for s in v.subviews {
+            if let f = findSplit(in: s) { return f }
+        }
+        return nil
+    }
+}
+#endif
 
 #if os(macOS)
 // Sợi hairline đè lên divider — trong suốt với chuột để vẫn kéo resize được.
