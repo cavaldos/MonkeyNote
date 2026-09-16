@@ -194,7 +194,7 @@ extension CursorTextView {
         let font = self.font ?? NSFont.systemFont(ofSize: 14)
         ts.addAttributes([
             .font: font,
-            .foregroundColor: NSColor.gray.withAlphaComponent(autocompleteOpacity)
+            .foregroundColor: NSColor.gray.withAlphaComponent(autocompleteOpacity),
         ], range: inserted)
         undoManager?.enableUndoRegistration()
         ghostRange = inserted

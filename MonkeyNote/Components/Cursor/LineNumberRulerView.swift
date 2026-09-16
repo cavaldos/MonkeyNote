@@ -9,14 +9,14 @@
 import AppKit
 
 class LineNumberRulerView: NSRulerView {
-    
+
     // MARK: - Properties
-    
+
     private weak var textView: NSTextView?
     private var lineNumberColor: NSColor = NSColor.gray
     private var selectedLineColor: NSColor = NSColor.white
     private var font: NSFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-    
+
     // Current line tracking
     private var currentLine: Int = 1
 
@@ -32,42 +32,43 @@ class LineNumberRulerView: NSRulerView {
     private var isCacheDirty: Bool = true
     private var lastDarkMode: Bool?
     private var lastFontSize: CGFloat = 0
-    
+
     // Gutter width tracks the digit count: narrow by default, grows past 99 lines.
     static let emptyWidth: CGFloat = 18
     private var rulerWidth: CGFloat = emptyWidth
     private let rightPadding: CGFloat = 3
     private let verticalOffset: CGFloat = 2
-    
+
     // MARK: - Initialization
-    
+
     init(textView: NSTextView, scrollView: NSScrollView) {
         self.textView = textView
         super.init(scrollView: scrollView, orientation: .verticalRuler)
-        
+
         self.clientView = textView
         self.ruleThickness = rulerWidth
 
         // Ruler làm textStorage delegate để patch cache theo từng edit
         // (ko ai khác dùng delegate này — đã grep).
         textView.textStorage?.delegate = self
-        
+
         setupNotifications()
     }
-    
+
+    // swiftlint:disable:next unavailable_function - required by NSCoding, cannot be marked unavailable
     required init(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
+
     deinit {
         NotificationCenter.default.removeObserver(self)
     }
-    
+
     // MARK: - Setup
-    
+
     private func setupNotifications() {
         guard let textView = textView else { return }
-        
+
         // Observe text changes
         NotificationCenter.default.addObserver(
             self,
@@ -75,7 +76,7 @@ class LineNumberRulerView: NSRulerView {
             name: NSText.didChangeNotification,
             object: textView
         )
-        
+
         // Observe selection changes
         NotificationCenter.default.addObserver(
             self,
@@ -83,7 +84,7 @@ class LineNumberRulerView: NSRulerView {
             name: NSTextView.didChangeSelectionNotification,
             object: textView
         )
-        
+
         // Observe scroll changes
         if let clipView = scrollView?.contentView {
             clipView.postsBoundsChangedNotifications = true
@@ -95,9 +96,9 @@ class LineNumberRulerView: NSRulerView {
             )
         }
     }
-    
+
     // MARK: - Configuration
-    
+
     func updateColors(isDarkMode: Bool) {
         // Guard: updateNSView calls this on every SwiftUI update — skip redraw if unchanged.
         if lastDarkMode == isDarkMode { return }
@@ -110,7 +111,7 @@ class LineNumberRulerView: NSRulerView {
             : NSColor.black.withAlphaComponent(0.85)
         needsDisplay = true
     }
-    
+
     func updateFont(_ newFont: NSFont) {
         if lastFontSize == newFont.pointSize { return }
         lastFontSize = newFont.pointSize
@@ -153,25 +154,25 @@ class LineNumberRulerView: NSRulerView {
         for a in lines { n += a.count }
         return max(1, n)
     }
-    
+
     // MARK: - Notifications
-    
+
     @objc private func textDidChange(_ notification: Notification) {
         // Cache do textStorage delegate patch trực tiếp mỗi edit nên ở đây
         // chỉ cần vẽ lại, không full rescan. Trường hợp delegate miss (paste
         // khủng → tự đánh dirty) thì ensureLineStarts tự rebuild khi cần.
         needsDisplay = true
     }
-    
+
     @objc private func selectionDidChange(_ notification: Notification) {
         updateCurrentLine()
         needsDisplay = true
     }
-    
+
     @objc private func scrollViewDidScroll(_ notification: Notification) {
         needsDisplay = true
     }
-    
+
     // MARK: - Line Calculation
 
     /// Single UTF-16 pass chia chunk — cùng convention \n với Coordinator +
@@ -205,7 +206,7 @@ class LineNumberRulerView: NSRulerView {
         cachedTextLength = utf16Count
         isCacheDirty = false
     }
-    
+
     private func updateCurrentLine() {
         guard let textView = textView else { return }
         if textView.string.isEmpty {
@@ -215,9 +216,9 @@ class LineNumberRulerView: NSRulerView {
         let cursorPos = textView.selectedRange().location
         currentLine = lineNumber(forLocation: cursorPos)
     }
-    
+
     // MARK: - Drawing
-    
+
     override func draw(_ dirtyRect: NSRect) {
         // Erase first: a clear fill with sourceOver is a no-op and leaves
         // ghost numbers behind whenever edits shift lines up/down.
@@ -226,26 +227,26 @@ class LineNumberRulerView: NSRulerView {
 
         drawLineNumbers(in: dirtyRect)
     }
-    
+
     private func drawLineNumbers(in rect: NSRect) {
         guard let textView = textView,
               let layoutManager = textView.layoutManager,
               let textContainer = textView.textContainer else { return }
-        
+
         let text = textView.string
         let visibleRect = textView.visibleRect
         let textInset = textView.textContainerInset
-        
+
         // Update current line for selection highlight (O(log N) via cache)
         updateCurrentLine()
-        
+
         // Handle empty document
         if text.isEmpty {
             let yPosition = textInset.height - visibleRect.origin.y + verticalOffset
             drawLineNumber(1, at: yPosition, isCurrentLine: true)
             return
         }
-        
+
         // Cached line starts — built once per file/paste, patched per keystroke.
         ensureChunkCache(for: text)
         let totalLines = totalLineCount()
@@ -258,7 +259,7 @@ class LineNumberRulerView: NSRulerView {
             rulerWidth = fitted
             ruleThickness = fitted
         }
-        
+
         // Viewport-only: never touch layout outside the visible rect.
         // Same pattern as SearchHighlighting.updateVisibleHighlights.
         var visibleGlyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
@@ -271,33 +272,33 @@ class LineNumberRulerView: NSRulerView {
         // Re-resolve after layout settled (range is stable, but cheap insurance).
         visibleGlyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
         guard visibleGlyphRange.length > 0 else { return }
-        
+
         // Track which lines we've drawn to avoid duplicates (for wrapped lines)
         var drawnLines = Set<Int>()
         drawnLines.reserveCapacity(64)
-        
+
         // Enumerate only visible fragments (~50) instead of the whole file (~5000).
-        layoutManager.enumerateLineFragments(forGlyphRange: visibleGlyphRange) { (lineRect, usedRect, container, glyphRange, stop) in
+        layoutManager.enumerateLineFragments(forGlyphRange: visibleGlyphRange) { (lineRect, _, _, glyphRange, _) in
             // Convert glyph range to character range
             let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-            
+
             // Binary search trên chunked cache: O(log N) mỗi visible fragment.
             let lineNumber = self.lineNumberAt(max(0, min(charRange.location, self.cachedTextLength)))
-            
+
             // Skip if we've already drawn this line (handles soft-wrapped lines)
             if drawnLines.contains(lineNumber) {
                 return
             }
             drawnLines.insert(lineNumber)
-            
+
             // lineRect.origin.y is in text container coordinates.
             let yInTextView = lineRect.origin.y + textInset.height
             let yInRuler = yInTextView - visibleRect.origin.y + self.verticalOffset
-            
+
             let isCurrentLine = lineNumber == self.currentLine
             self.drawLineNumber(lineNumber, at: yInRuler, isCurrentLine: isCurrentLine)
         }
-        
+
         // Trailing newline: text ending in \n has an empty last line with no fragment.
         // Only pay for its layout when the end of the document is actually visible.
         if text.utf16.last == 0x0A {
@@ -308,7 +309,7 @@ class LineNumberRulerView: NSRulerView {
                 let lastLineRect = layoutManager.lineFragmentRect(forGlyphAt: lastGlyphIndex, effectiveRange: nil)
                 let yInTextView = lastLineRect.origin.y + lastLineRect.height + textInset.height
                 let yInRuler = yInTextView - visibleRect.origin.y + verticalOffset
-                
+
                 let rulerHeight = self.bounds.height
                 if yInRuler >= -30 && yInRuler <= rulerHeight + 30 {
                     let isCurrentLine = lastLineNumber == self.currentLine
@@ -317,25 +318,25 @@ class LineNumberRulerView: NSRulerView {
             }
         }
     }
-    
+
     private func drawLineNumber(_ number: Int, at y: CGFloat, isCurrentLine: Bool) {
         let lineNumberString = "\(number)"
-        
+
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: isCurrentLine ? selectedLineColor : lineNumberColor
+            .foregroundColor: isCurrentLine ? selectedLineColor : lineNumberColor,
         ]
-        
+
         let attributedString = NSAttributedString(string: lineNumberString, attributes: attributes)
         let stringSize = attributedString.size()
-        
+
         // Right-align the number
         let x = rulerWidth - stringSize.width - rightPadding
         let drawY = y + (font.ascender - font.descender - stringSize.height) / 2 + 2
-        
+
         attributedString.draw(at: NSPoint(x: x, y: drawY))
     }
-    
+
     override var isFlipped: Bool {
         return true
     }

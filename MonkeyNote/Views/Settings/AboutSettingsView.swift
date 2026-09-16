@@ -30,34 +30,55 @@ struct AboutSettingsView: View {
             Divider()
 
             VStack(spacing: 12) {
-                Button(action: {
-                    NSWorkspace.shared.open(URL(string: "https://github.com/cavaldos/MonkeyNote")!)
-                }) {
-                    Text("Contribute")
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
-                .buttonStyle(.bordered)
-                .frame(width: 150)
-
-                Button(action: {
-                    NSWorkspace.shared.open(URL(string: "https://github.com/cavaldos/MonkeyNote/issues")!)
-                }) {
-                    Text("Report a Bug")
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
-                .buttonStyle(.bordered)
-                .frame(width: 150)
-
-                Button(action: {
-                    NSWorkspace.shared.open(URL(string: "https://ko-fi.com/calvados")!)
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "heart.fill")
-                            .font(.system(size: 12))
-                        Text("Support me")
+                Button(
+                    action: {
+                        NSWorkspace.shared.open(URL(string: "https://github.com/cavaldos/MonkeyNote/releases/latest")!)
+                    },
+                    label: {
+                        Text("Check for Updates")
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                }
+                )
+                .buttonStyle(.bordered)
+                .frame(width: 150)
+
+                Button(
+                    action: {
+                        NSWorkspace.shared.open(URL(string: "https://github.com/cavaldos/MonkeyNote")!)
+                    },
+                    label: {
+                        Text("Contribute")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                )
+                .buttonStyle(.bordered)
+                .frame(width: 150)
+
+                Button(
+                    action: {
+                        NSWorkspace.shared.open(URL(string: "https://github.com/cavaldos/MonkeyNote/issues")!)
+                    },
+                    label: {
+                        Text("Report a Bug")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                )
+                .buttonStyle(.bordered)
+                .frame(width: 150)
+
+                Button(
+                    action: {
+                        NSWorkspace.shared.open(URL(string: "https://ko-fi.com/calvados")!)
+                    },
+                    label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "heart.fill")
+                                .font(.system(size: 12))
+                            Text("Support me")
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                )
                 .buttonStyle(.bordered)
                 .frame(width: 150)
             }

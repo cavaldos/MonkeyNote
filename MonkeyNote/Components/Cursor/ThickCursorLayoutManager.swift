@@ -1,5 +1,5 @@
 //
-//  CursorLayoutManager.swift
+//  ThickCursorLayoutManager.swift
 //  MonkeyNote
 //
 //  Plain layout manager — no markdown rendering (removed for large-file performance).

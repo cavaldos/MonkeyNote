@@ -21,33 +21,33 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
     private var textView: NSTextView?
     private var speakButton: NSButton?
     private var onDismiss: (() -> Void)?
-    
+
     private var currentWord: String = ""
     private weak var parentWindow: NSWindow?
     private var menuOriginPoint: NSPoint = .zero
     private let speechSynthesizer = AVSpeechSynthesizer()
     private var isSpeakingWord: Bool = false
-    
+
     private let menuWidth: CGFloat = 380
     private let menuMinHeight: CGFloat = 120
     private let menuMaxHeight: CGFloat = 400
     private let padding: CGFloat = 16
     private let speakButtonSize: CGFloat = 24
-    
+
     override init() {
         super.init()
         speechSynthesizer.delegate = self
     }
-    
+
     func show(at point: NSPoint, in parentWindow: NSWindow?, word: String, onDismiss: @escaping () -> Void) {
         self.onDismiss = onDismiss
         self.currentWord = word
         self.menuOriginPoint = point
         self.parentWindow = parentWindow
-        
+
         createWindow(word: word)
     }
-    
+
     private func createWindow(word: String) {
         stopSpeakingWord()
 
@@ -56,20 +56,20 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
             existingWindow.parent?.removeChildWindow(existingWindow)
             existingWindow.orderOut(nil)
         }
-        
+
         // Get definition
         let definition = getDefinition(for: word)
-        
+
         // Build attributed content
         let attributedContent = buildAttributedContent(word: word, definition: definition)
-        
+
         // Calculate height based on content
         let contentHeight = calculateContentHeight(attributedContent: attributedContent)
         let menuHeight = min(max(contentHeight + padding * 2, menuMinHeight), menuMaxHeight)
-        
+
         // Calculate position
         var origin = NSPoint(x: menuOriginPoint.x, y: menuOriginPoint.y - menuHeight - 5)
-        
+
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
             if origin.x + menuWidth > screenFrame.maxX {
@@ -82,7 +82,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
                 origin.y = menuOriginPoint.y + 25
             }
         }
-        
+
         let panel = NSPanel(
             contentRect: NSRect(x: origin.x, y: origin.y, width: menuWidth, height: menuHeight),
             styleMask: [.nonactivatingPanel, .fullSizeContentView],
@@ -93,7 +93,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
         panel.backgroundColor = NSColor.clear
         panel.hasShadow = true
         panel.level = NSWindow.Level.floating
-        
+
         // Background view (blurred so text behind the popup isn't readable)
         let bgView = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: menuWidth, height: menuHeight))
         bgView.material = .hudWindow
@@ -104,16 +104,16 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
         bgView.layer?.masksToBounds = true
         bgView.layer?.borderWidth = 0.5
         bgView.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
-        
+
         backgroundView = bgView
-        
+
         // Setup scroll view with text
         setupScrollView(in: bgView, attributedContent: attributedContent, menuHeight: menuHeight)
         setupSpeakButton(in: bgView, menuHeight: menuHeight)
-        
+
         panel.contentView = bgView
         self.window = panel
-        
+
         parentWindow?.addChildWindow(panel, ordered: NSWindow.OrderingMode.above)
         panel.makeKeyAndOrderFront(self)
     }
@@ -147,7 +147,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
         button.target = self
         button.action = #selector(toggleSpeakWord)
         button.toolTip = "Phat am"
-        
+
         speakButton = button
         container.addSubview(button)
         updateSpeakButtonAppearance()
@@ -225,7 +225,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
         }
         return languageCode
     }
-    
+
     private func setupScrollView(in container: NSView, attributedContent: NSAttributedString, menuHeight: CGFloat) {
         // ScrollView stretches flush to the right edge so the scroller sits
         // at the popup border; the text keeps its 16pt right padding via textWidth.
@@ -235,7 +235,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
             width: menuWidth - padding,
             height: menuHeight - padding * 2
         )
-        
+
         let scroll = NSScrollView(frame: scrollViewFrame)
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
@@ -256,45 +256,42 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
         text.autoresizingMask = [.width]
         text.minSize = NSSize(width: 0, height: 0)
         text.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        
+
         text.textContainer?.widthTracksTextView = true
         text.textContainer?.containerSize = NSSize(width: textWidth, height: .greatestFiniteMagnitude)
         text.textContainer?.lineFragmentPadding = 0
         text.isVerticallyResizable = true
         text.isHorizontallyResizable = false
-        
+
         text.textStorage?.setAttributedString(attributedContent)
-        
+
         scroll.documentView = text
         container.addSubview(scroll)
-        
+
         scrollView = scroll
         textView = text
     }
-    
+
     private func calculateContentHeight(attributedContent: NSAttributedString) -> CGFloat {
         let textStorage = NSTextStorage(attributedString: attributedContent)
         let textContainer = NSTextContainer(containerSize: NSSize(width: menuWidth - padding * 2, height: .greatestFiniteMagnitude))
         let layoutManager = NSLayoutManager()
-        
+
         layoutManager.addTextContainer(textContainer)
         textStorage.addLayoutManager(layoutManager)
-        
+
         textContainer.lineFragmentPadding = 0
         layoutManager.ensureLayout(for: textContainer)
-        
+
         let usedRect = layoutManager.usedRect(for: textContainer)
         return usedRect.height
     }
-    
+
     // MARK: - Build Attributed Content (Dictionary.app style)
 
     private func serifFont(size: CGFloat, bold: Bool = false, italic: Bool = false) -> NSFont {
         let name: String
-        if bold && italic { name = "Georgia-BoldItalic" }
-        else if bold { name = "Georgia-Bold" }
-        else if italic { name = "Georgia-Italic" }
-        else { name = "Georgia" }
+        if bold && italic { name = "Georgia-BoldItalic" } else if bold { name = "Georgia-Bold" } else if italic { name = "Georgia-Italic" } else { name = "Georgia" }
         return NSFont(name: name, size: size) ?? NSFont.systemFont(ofSize: size, weight: bold ? .bold : .regular)
     }
 
@@ -306,7 +303,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
             string: word.lowercased(),
             attributes: [
                 .font: serifFont(size: 23, bold: true),
-                .foregroundColor: NSColor.white
+                .foregroundColor: NSColor.white,
             ]
         )
         result.append(wordAttr)
@@ -317,7 +314,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
                 string: "No definition found",
                 attributes: [
                     .font: NSFont.systemFont(ofSize: 13),
-                    .foregroundColor: NSColor.white.withAlphaComponent(0.5)
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.5),
                 ]
             ))
             return result
@@ -330,7 +327,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
                 string: "  " + parsed.pronunciation,
                 attributes: [
                     .font: serifFont(size: 14),
-                    .foregroundColor: NSColor.white.withAlphaComponent(0.5)
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.5),
                 ]
             ))
         }
@@ -344,7 +341,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
                     string: "  " + part.partOfSpeech + "\n",
                     attributes: [
                         .font: NSFont.systemFont(ofSize: 13),
-                        .foregroundColor: NSColor.systemGray
+                        .foregroundColor: NSColor.systemGray,
                     ]
                 ))
             }
@@ -354,7 +351,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
                     string: "    \(index + 1) ",
                     attributes: [
                         .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                        .foregroundColor: NSColor.white.withAlphaComponent(0.45)
+                        .foregroundColor: NSColor.white.withAlphaComponent(0.45),
                     ]
                 )
                 result.append(numAttr)
@@ -362,7 +359,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
                     string: def.text + "\n",
                     attributes: [
                         .font: serifFont(size: 14, bold: true),
-                        .foregroundColor: NSColor.white
+                        .foregroundColor: NSColor.white,
                     ]
                 ))
                 // Examples: EN line (grey italic) + VI line (white) below
@@ -371,14 +368,14 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
                         string: "      ▸ ",
                         attributes: [
                             .font: NSFont.systemFont(ofSize: 11),
-                            .foregroundColor: NSColor.white.withAlphaComponent(0.4)
+                            .foregroundColor: NSColor.white.withAlphaComponent(0.4),
                         ]
                     ))
                     result.append(NSAttributedString(
                         string: example.en + "\n",
                         attributes: [
                             .font: serifFont(size: 13, italic: true),
-                            .foregroundColor: NSColor.white.withAlphaComponent(0.6)
+                            .foregroundColor: NSColor.white.withAlphaComponent(0.6),
                         ]
                     ))
                     if let vi = example.vi, !vi.isEmpty {
@@ -386,7 +383,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
                             string: "          " + vi + "\n",
                             attributes: [
                                 .font: serifFont(size: 13.5),
-                                .foregroundColor: NSColor.white.withAlphaComponent(0.92)
+                                .foregroundColor: NSColor.white.withAlphaComponent(0.92),
                             ]
                         ))
                     }
@@ -401,14 +398,14 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
                 string: "  TỪ ĐỒNG NGHĨA\n",
                 attributes: [
                     .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-                    .foregroundColor: NSColor.white.withAlphaComponent(0.45)
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.45),
                 ]
             ))
             result.append(NSAttributedString(
                 string: "    " + syn + "\n",
                 attributes: [
                     .font: serifFont(size: 13.5),
-                    .foregroundColor: NSColor.white.withAlphaComponent(0.92)
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.92),
                 ]
             ))
         }
@@ -418,14 +415,14 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
                 string: "  TỪ TRÁI NGHĨA\n",
                 attributes: [
                     .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-                    .foregroundColor: NSColor.white.withAlphaComponent(0.45)
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.45),
                 ]
             ))
             result.append(NSAttributedString(
                 string: "    " + ant + "\n",
                 attributes: [
                     .font: serifFont(size: 13.5),
-                    .foregroundColor: NSColor.white.withAlphaComponent(0.92)
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.92),
                 ]
             ))
         }
@@ -437,14 +434,14 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
                 string: parsed.rawText,
                 attributes: [
                     .font: serifFont(size: 13),
-                    .foregroundColor: NSColor.white.withAlphaComponent(0.85)
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.85),
                 ]
             ))
         }
 
         return result
     }
-    
+
     // MARK: - Parse Definition
 
     private struct ParsedDefinition {
@@ -486,7 +483,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
         "sao", "the", "nao", "dau", "noi", "viec", "lam", "di", "mot", "một", "ngôi",
         "nhà", "người", "đã", "hơi", "hơn", "đứa", "bé", "thể", "chất", "yếu", "ớt",
         "tôi", "bạn", "của", "và", "với", "không", "được", "những", "các", "đến",
-        "rất", "nhiều", "lại", "ở", "về", "cô", "cháu", "ông", "bà", "anh", "ấy"
+        "rất", "nhiều", "lại", "ở", "về", "cô", "cháu", "ông", "bà", "anh", "ấy",
     ]
 
     /// Split "a slightly bigger house một ngôi nhà hơi lớn hơn" → (en, vi).
@@ -500,9 +497,7 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
         let words = text.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         // Index of first word containing a VN diacritic.
         var firstVN = words.count
-        for (i, w) in words.enumerated() {
-            if w.rangeOfCharacter(from: vietnameseDiacritics) != nil { firstVN = i; break }
-        }
+        for (i, w) in words.enumerated() where w.rangeOfCharacter(from: vietnameseDiacritics) != nil { firstVN = i; break }
         guard firstVN < words.count else { return DictExample(en: text, vi: nil) }
         // Walk back over ascii-only VI function words ("con", "toi", ...).
         var split = firstVN
@@ -530,7 +525,8 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
             .components(separatedBy: CharacterSet(charactersIn: "\n;•▸‣→▪"))
             .flatMap { $0.components(separatedBy: ",") }
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "•-–—0123456789. ")) }
+                .trimmingCharacters(in: CharacterSet(charactersIn: "•-–—0123456789. "))
+            }
             .filter { !$0.isEmpty && $0.count > 1 }
         // De-dupe while keeping order.
         var seen = Set<String>()
@@ -596,9 +592,11 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
         if let a = antRaw { parsed.antonyms = cleanList(a) }
 
         // 4. Split main body by Vietnamese POS headers.
-        let posNames = ["ngoại động từ", "nội động từ", "trợ động từ",
-                        "danh từ", "động từ", "tính từ", "phó từ", "trạng từ",
-                        "đại từ", "giới từ", "liên từ", "thán từ", "mạo từ"]
+        let posNames = [
+            "ngoại động từ", "nội động từ", "trợ động từ",
+            "danh từ", "động từ", "tính từ", "phó từ", "trạng từ",
+            "đại từ", "giới từ", "liên từ", "thán từ", "mạo từ",
+        ]
         let posPattern = "\\b(" + posNames.map(NSRegularExpression.escapedPattern(for:)) .joined(separator: "|") + ")\\b"
         var sections: [(pos: String, body: String)] = []
         if let re = try? NSRegularExpression(pattern: posPattern, options: .caseInsensitive) {
@@ -693,14 +691,14 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
         // ponytail: cap examples at 4 per sense, enough for popup.
         return [Definition(text: head, examples: Array(examples.prefix(4)))]
     }
-    
+
     func updateWord(_ word: String) {
         currentWord = word
         if parentWindow != nil {
             createWindow(word: word)
         }
     }
-    
+
     func dismiss() {
         stopSpeakingWord()
         if let window = self.window {
@@ -724,11 +722,11 @@ class DictionaryLookupWindowController: NSObject, AVSpeechSynthesizerDelegate {
         isSpeakingWord = false
         updateSpeakButtonAppearance()
     }
-    
+
     var isVisible: Bool {
         window != nil
     }
-    
+
     var currentLookupWord: String {
         currentWord
     }

@@ -8,8 +8,8 @@
 import Foundation
 
 enum SuggestionMode: String, CaseIterable {
-    case word = "word"
-    case sentence = "sentence"
+    case word
+    case sentence
 
     var displayName: String {
         switch self {

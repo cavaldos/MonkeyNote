@@ -15,7 +15,7 @@ import AppKit
 
 struct ContentView: View {
     @State private var viewModel = ContentViewModel()
-    
+
     var body: some View {
         NavigationSplitView {
             SidebarView()
@@ -70,13 +70,13 @@ struct ContentView: View {
             viewModel.selectedNoteID = nil
             viewModel.searchText = ""
             viewModel.trashItems = []
-            
+
             viewModel.loadFromVault()
             viewModel.ensureInitialSelection()
             viewModel.refreshTrash()
             viewModel.startWatchingVault()
             viewModel.startWatchingCurrentFile()
-            
+
             print("📂 Switched to vault: \(newURL?.path ?? "none")")
         }
         .onChange(of: viewModel.selectedNoteID) { _, _ in
@@ -209,7 +209,7 @@ struct SplitDividerSeal: NSViewRepresentable {
                                 strip.widthAnchor.constraint(equalToConstant: 1),
                                 strip.centerXAnchor.constraint(equalTo: sub.centerXAnchor),
                                 strip.topAnchor.constraint(equalTo: sub.topAnchor),
-                                strip.bottomAnchor.constraint(equalTo: sub.bottomAnchor)
+                                strip.bottomAnchor.constraint(equalTo: sub.bottomAnchor),
                             ])
                         }
                         sealed = true

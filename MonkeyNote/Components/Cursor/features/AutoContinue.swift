@@ -10,7 +10,7 @@ import AppKit
 
 // MARK: - List Auto Continue
 extension CursorTextView {
-    
+
     /// Handle Tab key for list formatting and autocomplete
     /// Returns true if the event was handled
     func handleTabKey(with event: NSEvent) -> Bool {
@@ -18,22 +18,22 @@ extension CursorTextView {
         if acceptSuggestion() {
             return true
         }
-        
+
         let selectedRange = self.selectedRange()
         let text = self.string as NSString
-        
+
         // Check if character BEFORE cursor is "-" or "."
         if selectedRange.location > 0 {
             let prevCharIndex = selectedRange.location - 1
             if prevCharIndex < text.length {
                 let prevChar = text.substring(with: NSRange(location: prevCharIndex, length: 1))
-                
+
                 // Check for "-" or "." at start of line for bullet list
                 if prevChar == "-" || prevChar == "." {
                     // Verify it's at the start of the line
                     let lineRange = text.lineRange(for: NSRange(location: prevCharIndex, length: 0))
                     let isAtLineStart = prevCharIndex == lineRange.location
-                    
+
                     if isAtLineStart {
                         // Calculate content length on this line only (exclude newline character)
                         var lineContentLength = lineRange.length
@@ -43,7 +43,7 @@ extension CursorTextView {
                                 lineContentLength -= 1
                             }
                         }
-                        
+
                         // Get remaining text on this line only (after "-" or ".")
                         let afterCharStart = prevCharIndex + 1
                         let afterCharLength = lineRange.location + lineContentLength - afterCharStart
@@ -54,10 +54,10 @@ extension CursorTextView {
                             self.setSelectedRange(NSRange(location: prevCharIndex + "• ".utf16.count, length: 0))
                             return true
                         }
-                        
+
                         let rangeAfterChar = NSRange(location: afterCharStart, length: afterCharLength)
                         let remainingText = text.substring(with: rangeAfterChar)
-                        
+
                         // Replace the entire line from dash/dot to end of line content with bullet + remaining text
                         let lineAfterChar = NSRange(location: prevCharIndex, length: 1 + afterCharLength)
                         let newText = "• " + remainingText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -66,14 +66,14 @@ extension CursorTextView {
                         return true
                     }
                 }
-                
+
                 // Check for numbered list pattern like "1."
                 if prevCharIndex >= 1 {
                     let twoCharsBefore = text.substring(with: NSRange(location: prevCharIndex - 1, length: 2))
                     if let regex = try? NSRegularExpression(pattern: "^\\d\\.", options: []),
                        regex.firstMatch(in: twoCharsBefore, options: [], range: NSRange(location: 0, length: 2)) != nil {
                         let lineRange = text.lineRange(for: NSRange(location: prevCharIndex - 1, length: 0))
-                        
+
                         // Calculate content length on this line only (exclude newline character)
                         var lineContentLength = lineRange.length
                         if lineRange.location + lineRange.length <= text.length {
@@ -82,7 +82,7 @@ extension CursorTextView {
                                 lineContentLength -= 1
                             }
                         }
-                        
+
                         // Get remaining text on this line only (after "1.")
                         let afterNumberStart = prevCharIndex + 1
                         let afterNumberLength = lineRange.location + lineContentLength - afterNumberStart
@@ -94,10 +94,10 @@ extension CursorTextView {
                             self.setSelectedRange(NSRange(location: prevCharIndex - 1 + newText.utf16.count, length: 0))
                             return true
                         }
-                        
+
                         let rangeAfterNumber = NSRange(location: afterNumberStart, length: afterNumberLength)
                         let remainingText = text.substring(with: rangeAfterNumber)
-                        
+
                         // Replace the number pattern and remaining text on this line only
                         let lineAfterNumber = NSRange(location: prevCharIndex - 1, length: 2 + afterNumberLength)
                         let newText = twoCharsBefore + " " + remainingText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -108,27 +108,27 @@ extension CursorTextView {
                 }
             }
         }
-        
+
         super.insertText("\t", replacementRange: self.selectedRange())
         return true
     }
-    
+
     /// Handle Shift + Enter - soft line break (continue same list item)
     /// Returns true if the event was handled
     func handleShiftEnter() -> Bool {
         let selectedRange = self.selectedRange()
         let text = self.string as NSString
-        
+
         let lineRange = text.lineRange(for: selectedRange)
         let currentLine = text.substring(with: lineRange)
         let trimmedLine = currentLine.trimmingCharacters(in: .whitespaces)
-        
+
         // Check if we're in a todo list
         if trimmedLine.hasPrefix("- [ ] ") || trimmedLine.hasPrefix("- [x] ") || trimmedLine.hasPrefix("- [X] ") {
             super.insertText("\n      ", replacementRange: self.selectedRange())
             return true
         }
-        
+
         // Check if we're in a numbered list
         if let regex = try? NSRegularExpression(pattern: "^(\\d+)\\.", options: []),
            regex.firstMatch(in: trimmedLine, options: [], range: NSRange(location: 0, length: trimmedLine.utf16.count)) != nil {
@@ -136,34 +136,34 @@ extension CursorTextView {
             super.insertText("\n   ", replacementRange: self.selectedRange())
             return true
         }
-        
+
         // Check if we're in a bullet list
         if trimmedLine.hasPrefix("•") {
             // Insert newline with indent (2 spaces to align with text after "• ")
             super.insertText("\n  ", replacementRange: self.selectedRange())
             return true
         }
-        
+
         // Default: just insert newline
         super.insertText("\n", replacementRange: self.selectedRange())
         return true
     }
-    
+
     /// Handle Enter key for list continuation
     /// Returns true if the event was handled
     func handleEnterKey() -> Bool {
         let selectedRange = self.selectedRange()
         let text = self.string as NSString
-        
+
         let lineRange = text.lineRange(for: selectedRange)
         let currentLine = text.substring(with: lineRange)
         let trimmedLine = currentLine.trimmingCharacters(in: .whitespaces)
-        
+
         // Handle todo list (must come before bullet list check)
         if trimmedLine.hasPrefix("- [ ] ") || trimmedLine.hasPrefix("- [x] ") || trimmedLine.hasPrefix("- [X] ") {
             let prefixLen = "- [ ] ".count
             let content = String(trimmedLine.dropFirst(prefixLen)).trimmingCharacters(in: .whitespaces)
-            
+
             if content.isEmpty {
                 // Remove the empty todo line
                 let linesBefore = text.substring(with: NSRange(location: 0, length: lineRange.location))
@@ -178,7 +178,7 @@ extension CursorTextView {
             }
             return true
         }
-        
+
         // Handle todo without trailing space (e.g. "- [ ]" or "- [x]")
         if trimmedLine == "- [ ]" || trimmedLine == "- [x]" || trimmedLine == "- [X]" {
             let linesBefore = text.substring(with: NSRange(location: 0, length: lineRange.location))
@@ -188,7 +188,7 @@ extension CursorTextView {
             self.setSelectedRange(NSRange(location: lineRange.location, length: 0))
             return true
         }
-        
+
         // Handle bullet list
         if trimmedLine.hasPrefix("•") {
             // Get content after bullet (handle both "• " and "•")
@@ -198,7 +198,7 @@ extension CursorTextView {
             } else {
                 bulletContent = String(trimmedLine.dropFirst("•".count)).trimmingCharacters(in: .whitespaces)
             }
-            
+
             if bulletContent.isEmpty {
                 // Remove the bullet line entirely
                 let linesBefore = text.substring(with: NSRange(location: 0, length: lineRange.location))
@@ -212,7 +212,7 @@ extension CursorTextView {
             }
             return true
         }
-        
+
         // Handle numbered list
         if let regex = try? NSRegularExpression(pattern: "^(\\d+)\\.", options: []),
            let match = regex.firstMatch(in: trimmedLine, options: [], range: NSRange(location: 0, length: trimmedLine.utf16.count)) {
@@ -222,7 +222,7 @@ extension CursorTextView {
             let contentStart = match.range.location + match.range.length
             let contentLength = trimmedLine.utf16.count - contentStart
             let content = (trimmedLine as NSString).substring(with: NSRange(location: contentStart, length: contentLength)).trimmingCharacters(in: .whitespaces)
-            
+
             if content.isEmpty {
                 let linesBefore = text.substring(with: NSRange(location: 0, length: lineRange.location))
                 let linesAfter = text.substring(with: NSRange(location: lineRange.location + lineRange.length, length: text.length - (lineRange.location + lineRange.length)))
@@ -237,27 +237,27 @@ extension CursorTextView {
             }
             return true
         }
-        
+
         return false
     }
-    
+
     /// Handle space after "." or "-" at line start to convert to bullet
     /// Returns true if the event was handled
     func handleBulletConversion(_ str: String) -> Bool {
         guard str == " " else { return false }
-        
+
         let selectedRange = self.selectedRange()
         let text = self.string as NSString
-        
+
         if selectedRange.location > 0 {
             let prevCharIndex = selectedRange.location - 1
             let prevChar = text.substring(with: NSRange(location: prevCharIndex, length: 1))
-            
+
             // Check for "." or "-" at start of line
             if prevChar == "." || prevChar == "-" {
                 let lineRange = text.lineRange(for: NSRange(location: prevCharIndex, length: 0))
                 let isAtLineStart = prevCharIndex == lineRange.location
-                
+
                 if isAtLineStart {
                     // Replace "." or "-" with bullet
                     let rangeToReplace = NSRange(location: prevCharIndex, length: 1)
@@ -267,26 +267,26 @@ extension CursorTextView {
                 }
             }
         }
-        
+
         return false
     }
-    
+
     /// Handle double-tap navigation (Delete, Left Arrow, Right Arrow)
     /// Returns true if the event was handled
     func handleDoubleTapNavigation(with event: NSEvent) -> Bool {
         guard doubleTapNavigationEnabled else { return false }
-        
+
         let currentKeyCode = event.keyCode
         let now = Date()
         let timeSinceLastKey = now.timeIntervalSince(lastKeyTime) * 1000 // Convert to milliseconds
-        
+
         // Check if this is a double-tap (same key pressed within delay threshold)
         let isDoubleTap = currentKeyCode == lastKeyCode && timeSinceLastKey <= doubleTapDelay
-        
+
         // Update tracking for next check
         lastKeyCode = currentKeyCode
         lastKeyTime = now
-        
+
         if isDoubleTap {
             switch currentKeyCode {
             case 51: // Delete/Backspace - delete word backward (like Option+Delete)
@@ -307,7 +307,7 @@ extension CursorTextView {
                 break
             }
         }
-        
+
         return false
     }
 }

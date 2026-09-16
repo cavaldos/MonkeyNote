@@ -11,31 +11,31 @@ struct FontPreviewerView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("note.fontFamily") private var fontFamily: String = "monospaced"
     @AppStorage("note.fontSize") private var fontSize: Double = 28
-    
+
     @State private var searchText: String = ""
     @State private var isDetailedView: Bool = false
     @State private var selectedFont: String = ""
-    
+
     private let sampleTexts = [
         "The quick brown fox jumps over the lazy dog",
         "Hà Nội là thủ đô Việt Nam",
         "0123456789 !@#$%^&*()",
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-        "abcdefghijklmnopqrstuvwxyz"
+        "abcdefghijklmnopqrstuvwxyz",
     ]
-    
+
     private var availableFonts: [String] {
         let systemFonts = NSFontManager.shared.availableFontFamilies.sorted()
         return systemFonts
     }
-    
+
     private var filteredFonts: [String] {
         if searchText.isEmpty {
             return availableFonts
         }
         return availableFonts.filter { $0.localizedCaseInsensitiveContains(searchText) }
     }
-    
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -53,14 +53,14 @@ struct FontPreviewerView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Color(.controlBackgroundColor))
                     )
-                    
+
                     HStack {
                         Text("\(filteredFonts.count) fonts")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        
+
                         Spacer()
-                        
+
                         Toggle("Detailed View", isOn: $isDetailedView)
                             .toggleStyle(.switch)
                             .controlSize(.small)
@@ -69,9 +69,9 @@ struct FontPreviewerView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
                 .padding(.bottom, 16)
-                
+
                 Divider()
-                
+
                 // Font list
                 ScrollView {
                     LazyVStack(spacing: 8) {
@@ -115,7 +115,7 @@ struct FontRow: View {
     let sampleTexts: [String]
     let isSelected: Bool
     let onSelect: () -> Void
-    
+
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
@@ -123,7 +123,7 @@ struct FontRow: View {
                 Text(fontName)
                     .font(.system(size: 16, weight: .medium, design: .monospaced))
                     .foregroundStyle(.primary)
-                
+
                 // Sample text preview
                 if isDetailedView {
                     VStack(alignment: .leading, spacing: 4) {
@@ -141,9 +141,9 @@ struct FontRow: View {
                         .lineLimit(1)
                 }
             }
-            
+
             Spacer()
-            
+
             // Selection indicator
             Button {
                 onSelect()

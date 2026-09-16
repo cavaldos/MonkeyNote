@@ -98,3 +98,5 @@ output/
 # Documentation build
 docs/_build/
 trash
+.opencode/
+.opencode

@@ -77,7 +77,7 @@ extension CursorTextView {
         let l = CALayer()
         l.actions = [
             "opacity": NSNull(), "position": NSNull(), "bounds": NSNull(),
-            "frame": NSNull(), "contents": NSNull()
+            "frame": NSNull(), "contents": NSNull(),
         ]
         wantsLayer = true
         self.layer?.addSublayer(l)
@@ -116,7 +116,7 @@ extension CursorTextView {
             l.cornerRadius = 2
             l.actions = [
                 "opacity": NSNull(), "position": NSNull(), "bounds": NSNull(),
-                "frame": NSNull(), "backgroundColor": NSNull()
+                "frame": NSNull(), "backgroundColor": NSNull(),
             ]
             wantsLayer = true
             self.layer?.addSublayer(l)
@@ -157,7 +157,7 @@ extension CursorTextView {
         fade.duration = total
         fade.timingFunctions = [
             CAMediaTimingFunction(name: .linear),
-            CAMediaTimingFunction(name: .easeOut)
+            CAMediaTimingFunction(name: .easeOut),
         ]
         fade.isRemovedOnCompletion = true
         fade.fillMode = .forwards
@@ -189,8 +189,12 @@ extension CursorTextView {
             let g = lm.glyphIndexForCharacter(at: loc - 1)
             let used = lm.lineFragmentUsedRect(forGlyphAt: g, effectiveRange: nil)
             guard used.width > 0, used.height > 0 else { return nil }
-            return NSRect(x: origin.x + used.maxX, y: origin.y + used.minY,
-                          width: 0, height: used.height)
+            return NSRect(
+                x: origin.x + used.maxX,
+                y: origin.y + used.minY,
+                width: 0,
+                height: used.height
+            )
         }
         // Dòng trống: pen ở đầu fragment
         let font = self.font ?? NSFont.systemFont(ofSize: 14)
@@ -200,8 +204,12 @@ extension CursorTextView {
         }
         let g = lm.glyphIndexForCharacter(at: min(loc, ts.length - 1))
         let frag = lm.lineFragmentRect(forGlyphAt: g, effectiveRange: nil)
-        return NSRect(x: origin.x + frag.minX, y: origin.y + frag.minY,
-                      width: 0, height: frag.height)
+        return NSRect(
+            x: origin.x + frag.minX,
+            y: origin.y + frag.minY,
+            width: 0,
+            height: frag.height
+        )
     }
 
     /// PHẦN 1 (gọi TRƯỚC super.insertText): đo chỗ chữ sắp hiện + snapshot nền.

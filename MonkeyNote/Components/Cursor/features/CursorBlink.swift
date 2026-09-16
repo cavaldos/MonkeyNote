@@ -10,7 +10,7 @@ import AppKit
 
 // MARK: - Cursor Blinking
 extension CursorTextView {
-    
+
     /// Giữ caret hiện rõ 0.8s sau mỗi phím gõ (kiểu Monkeytype), rồi mới blink tiếp.
     static let caretBlinkPause: TimeInterval = 0.8
     /// Fade blink mềm thay vì cắt cứng (skill: ease-out, 50-150ms).
@@ -30,8 +30,8 @@ extension CursorTextView {
         // Đọc opacity đang thấy để fade tiếp — tránh chớp khi toggle đúng lúc slide.
         // Chỉ đọc presentation khi thật sự animate (sync render server, đắt).
         let visualOpacity = layer.presentation()?.opacity ?? layer.opacity
-        guard visualOpacity != value || layer.opacity != value
-                || layer.animation(forKey: "caretBlink") == nil else { return }
+        let isAnimating = layer.animation(forKey: "caretBlink") != nil
+        guard visualOpacity != value || layer.opacity != value || !isAnimating else { return }
         layer.removeAnimation(forKey: "caretBlink")
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = visualOpacity

@@ -1,6 +1,6 @@
 //
 //  TrashView.swift
-//  Note
+//  MonkeyNote
 //
 //  Created by Nguyen Ngoc Khanh on 25/12/25.
 //
@@ -12,11 +12,11 @@ struct TrashView: View {
     let onRestore: (TrashItem) -> Void
     let onDelete: (TrashItem) -> Void
     let onEmptyTrash: () -> Void
-    
+
     @Environment(\.dismiss) private var dismiss
     @State private var showEmptyConfirmation = false
     @State private var selectedItem: TrashItem?
-    
+
     var body: some View {
         Group {
             if trashItems.isEmpty {
@@ -40,26 +40,26 @@ struct TrashView: View {
             }
         }
     }
-    
+
     // MARK: - Empty Trash View (Full Screen)
-    
+
     private var emptyTrashView: some View {
         VStack(spacing: 20) {
             Spacer()
-            
+
             Image(systemName: "trash")
                 .font(.system(size: 64))
                 .foregroundStyle(.secondary)
-            
+
             Text("Trash is Empty")
                 .font(.system(.title, design: .monospaced, weight: .bold))
-            
+
             Text("Deleted items will appear here")
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(.secondary)
-            
+
             Spacer()
-            
+
             // Bottom toolbar
             HStack {
                 Button("Done") {
@@ -71,9 +71,9 @@ struct TrashView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    
+
     // MARK: - Trash Content View (Split View)
-    
+
     private var trashContentView: some View {
         NavigationSplitView {
             trashListView
@@ -84,7 +84,7 @@ struct TrashView: View {
                             dismiss()
                         }
                     }
-                    
+
                     ToolbarItem(placement: .destructiveAction) {
                         Button("Empty Trash") {
                             showEmptyConfirmation = true
@@ -95,9 +95,9 @@ struct TrashView: View {
             detailView
         }
     }
-    
+
     // MARK: - List View
-    
+
     private var trashListView: some View {
         List(trashItems, selection: $selectedItem) { item in
             TrashItemRow(item: item)
@@ -111,7 +111,7 @@ struct TrashView: View {
                     } label: {
                         Label("Restore", systemImage: "arrow.uturn.backward")
                     }
-                    
+
                     Button(role: .destructive) {
                         if selectedItem?.id == item.id {
                             selectedItem = nil
@@ -123,9 +123,9 @@ struct TrashView: View {
                 }
         }
     }
-    
+
     // MARK: - Detail View
-    
+
     @ViewBuilder
     private var detailView: some View {
         if let item = selectedItem, trashItems.contains(where: { $0.id == item.id }) {
@@ -154,12 +154,12 @@ struct TrashView: View {
 
 struct TrashItemRow: View {
     let item: TrashItem
-    
+
     var body: some View {
         HStack {
             Image(systemName: item.type == .folder ? "folder" : "doc.text")
                 .foregroundStyle(item.type == .folder ? .blue : .secondary)
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.name)
                     .font(.system(.body, design: .monospaced))
@@ -180,11 +180,11 @@ struct TrashItemDetailView: View {
     let item: TrashItem
     let onRestore: () -> Void
     let onDelete: () -> Void
-    
+
     @State private var fileContent: String = ""
     @State private var folderContents: [String] = []
     @State private var isLoading = true
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -192,7 +192,7 @@ struct TrashItemDetailView: View {
                 Image(systemName: item.type == .folder ? "folder.fill" : "doc.text.fill")
                     .font(.title2)
                     .foregroundStyle(item.type == .folder ? .blue : .orange)
-                
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name)
                         .font(.system(.headline, design: .monospaced))
@@ -200,9 +200,9 @@ struct TrashItemDetailView: View {
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
-                
+
                 Spacer()
-                
+
                 // Action buttons
                 HStack(spacing: 12) {
                     Button {
@@ -211,7 +211,7 @@ struct TrashItemDetailView: View {
                         Label("Restore", systemImage: "arrow.uturn.backward")
                     }
                     .buttonStyle(.bordered)
-                    
+
                     Button(role: .destructive) {
                         onDelete()
                     } label: {
@@ -222,9 +222,9 @@ struct TrashItemDetailView: View {
             }
             .padding()
             .background(Color(nsColor: .windowBackgroundColor))
-            
+
             Divider()
-            
+
             // Content
             if isLoading {
                 Spacer()
@@ -272,10 +272,10 @@ struct TrashItemDetailView: View {
             }
         }
     }
-    
+
     private func loadContent() async {
         isLoading = true
-        
+
         if item.type == .file {
             // Read file content
             fileContent = (try? String(contentsOf: item.fullURL, encoding: .utf8)) ?? "(Unable to read file)"
@@ -293,7 +293,7 @@ struct TrashItemDetailView: View {
                 folderContents = []
             }
         }
-        
+
         isLoading = false
     }
 }
@@ -311,7 +311,7 @@ struct TrashItemDetailView: View {
     TrashView(
         trashItems: .constant([
             TrashItem(name: "Old Note.md", type: .file, relativePath: "Notes/Old Note.md", fullURL: URL(fileURLWithPath: "/tmp/test.md")),
-            TrashItem(name: "Archive", type: .folder, relativePath: "Archive", fullURL: URL(fileURLWithPath: "/tmp/archive"))
+            TrashItem(name: "Archive", type: .folder, relativePath: "Archive", fullURL: URL(fileURLWithPath: "/tmp/archive")),
         ]),
         onRestore: { _ in },
         onDelete: { _ in },

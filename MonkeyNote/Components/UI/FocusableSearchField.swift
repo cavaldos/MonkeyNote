@@ -12,9 +12,9 @@ import AppKit
 
 struct FocusableSearchField: NSViewRepresentable {
     @Binding var text: String
-    var onSubmit: (() -> Void)? = nil
-    var onEscape: (() -> Void)? = nil
-    
+    var onSubmit: (() -> Void)?
+    var onEscape: (() -> Void)?
+
     func makeNSView(context: Context) -> NSTextField {
         let textField = NSTextField()
         textField.placeholderString = "Search"
@@ -23,7 +23,7 @@ struct FocusableSearchField: NSViewRepresentable {
         textField.font = .systemFont(ofSize: 12)
         textField.focusRingType = .none
         textField.delegate = context.coordinator
-        
+
         NotificationCenter.default.addObserver(
             context.coordinator,
             selector: #selector(Coordinator.focusTextField),
@@ -31,10 +31,10 @@ struct FocusableSearchField: NSViewRepresentable {
             object: nil
         )
         context.coordinator.textField = textField
-        
+
         return textField
     }
-    
+
     func updateNSView(_ nsView: NSTextField, context: Context) {
         if nsView.stringValue != text {
             nsView.stringValue = text
@@ -42,35 +42,35 @@ struct FocusableSearchField: NSViewRepresentable {
         context.coordinator.onSubmit = onSubmit
         context.coordinator.onEscape = onEscape
     }
-    
+
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text, onSubmit: onSubmit, onEscape: onEscape)
     }
-    
+
     class Coordinator: NSObject, NSTextFieldDelegate {
         @Binding var text: String
         weak var textField: NSTextField?
         var onSubmit: (() -> Void)?
         var onEscape: (() -> Void)?
-        
+
         init(text: Binding<String>, onSubmit: (() -> Void)?, onEscape: (() -> Void)?) {
             _text = text
             self.onSubmit = onSubmit
             self.onEscape = onEscape
         }
-        
+
         @objc func focusTextField() {
             DispatchQueue.main.async {
                 self.textField?.window?.makeFirstResponder(self.textField)
             }
         }
-        
+
         func controlTextDidChange(_ obj: Notification) {
             if let textField = obj.object as? NSTextField {
                 text = textField.stringValue
             }
         }
-        
+
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
                 // Enter key pressed

@@ -9,16 +9,16 @@ import SwiftUI
 
 struct FolderRowView: View {
     @Environment(ContentViewModel.self) var viewModel
-    
+
     let folder: NoteFolder
     @Binding var hoverFolderID: NoteFolder.ID?
     @Binding var dragOverFolderID: NoteFolder.ID?
-    
+
     var body: some View {
         HStack {
             Label(folder.name, systemImage: "folder")
             Spacer()
-            
+
             // Menu button - only visible on hover
             if hoverFolderID == folder.id {
                 Menu {
@@ -27,15 +27,15 @@ struct FolderRowView: View {
                     } label: {
                         Label("New Folder", systemImage: "folder.badge.plus")
                     }
-                    
+
                     Button {
                         viewModel.startRenameFolder(folderID: folder.id)
                     } label: {
                         Label("Rename Folder", systemImage: "pencil")
                     }
-                    
+
                     Divider()
-                    
+
                     Button(role: .destructive) {
                         viewModel.deleteFolder(folderID: folder.id)
                     } label: {
@@ -50,7 +50,7 @@ struct FolderRowView: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
             }
-            
+
             Text("\(folder.notes.count)")
                 .foregroundStyle(.secondary)
         }
@@ -69,7 +69,7 @@ struct FolderRowView: View {
         }
         .tag(folder.id)
         .draggable(folder.id.uuidString)
-        .dropDestination(for: String.self) { items, location in
+        .dropDestination(for: String.self) { items, _ in
             dragOverFolderID = nil
             guard let itemString = items.first,
                   let itemID = UUID(uuidString: itemString) else { return false }

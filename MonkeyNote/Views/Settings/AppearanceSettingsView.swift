@@ -9,17 +9,17 @@ import SwiftUI
 
 // MARK: - Vibrancy Material Type
 enum VibrancyMaterialType: String, CaseIterable {
-    case hudWindow = "hudWindow"
-    case popover = "popover"
-    case sidebar = "sidebar"
-    case underWindowBackground = "underWindowBackground"
-    case headerView = "headerView"
-    case sheet = "sheet"
-    case windowBackground = "windowBackground"
-    case menu = "menu"
-    case contentBackground = "contentBackground"
-    case titlebar = "titlebar"
-    
+    case hudWindow
+    case popover
+    case sidebar
+    case underWindowBackground
+    case headerView
+    case sheet
+    case windowBackground
+    case menu
+    case contentBackground
+    case titlebar
+
     var displayName: String {
         switch self {
         case .hudWindow: return "HUD Window"
@@ -34,7 +34,7 @@ enum VibrancyMaterialType: String, CaseIterable {
         case .titlebar: return "Titlebar"
         }
     }
-    
+
     #if os(macOS)
     var material: NSVisualEffectView.Material {
         switch self {
@@ -105,13 +105,13 @@ struct AppearanceSettingsView: View {
                                 }
                             }
                         }
-                        
+
                         Section("Default") {
                             ForEach(defaultFonts, id: \.self) { family in
                                 Text(family.capitalized).tag(family)
                             }
                         }
-                        
+
                         Section("All Fonts") {
                             ForEach(availableFonts, id: \.self) { family in
                                 Text(family).tag(family)
@@ -131,7 +131,7 @@ struct AppearanceSettingsView: View {
                         Text("Preview")
                             .font(.system(size: fontSize, weight: .regular, design: FontHelper.getFontDesign(from: fontFamily)))
                             .foregroundStyle(.secondary)
-                        
+
                         Button("Preview All Fonts") {
                             showFontPreviewer = true
                         }
@@ -169,7 +169,7 @@ struct AppearanceSettingsView: View {
                     Toggle("Show Line Numbers", isOn: $showLineNumbers)
                 }
             }
-            
+
             #if os(macOS)
             SettingsSection("Background Vibrancy") {
                 VStack(alignment: .leading, spacing: 12) {
@@ -177,7 +177,7 @@ struct AppearanceSettingsView: View {
                         .onChange(of: vibrancyEnabled) { _, _ in
                             NotificationCenter.default.post(name: .vibrancySettingChanged, object: nil)
                         }
-                    
+
                     if vibrancyEnabled {
                         Picker("Blur Style", selection: $vibrancyMaterial) {
                             ForEach(VibrancyMaterialType.allCases, id: \.rawValue) { type in
@@ -188,7 +188,7 @@ struct AppearanceSettingsView: View {
                         .onChange(of: vibrancyMaterial) { _, _ in
                             NotificationCenter.default.post(name: .vibrancySettingChanged, object: nil)
                         }
-                        
+
                         Text("Vibrancy creates a frosted glass effect, allowing the desktop wallpaper to show through the window.")
                             .font(.caption)
                             .foregroundStyle(.secondary)

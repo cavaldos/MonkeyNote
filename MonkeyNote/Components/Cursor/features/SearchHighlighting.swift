@@ -10,7 +10,7 @@ import AppKit
 
 // MARK: - Search Highlighting (Viewport-Based Optimization)
 extension CursorTextView {
-    
+
     /// Main entry point - updates highlights based on current viewport
     func updateHighlights() {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -137,8 +137,10 @@ extension CursorTextView {
                     if Task.isCancelled { return }
                     let len = min(Self.searchSliceLength, end - off)
                     pending.append(contentsOf: Self.ranges(
-                        of: query, in: snapshot as NSString,
-                        range: NSRange(location: off, length: len)))
+                        of: query,
+                        in: snapshot as NSString,
+                        range: NSRange(location: off, length: len)
+                    ))
                     off += len
                     // Merge theo đợt để viewport cập nhật dần (scroll hiện dần).
                     if pending.count >= 256 || off >= end {
@@ -170,40 +172,40 @@ extension CursorTextView {
         lastFullSearchTime = Date()
         onSearchMatchesChanged?(allMatchRanges.count, true)
     }
-    
+
     /// Update highlights only for matches visible in viewport
     func updateVisibleHighlights(force: Bool = false) {
         guard let layoutManager = layoutManager, let textContainer = textContainer else { return }
-        
+
         let visibleRect = self.visibleRect
-        
+
         // Skip if viewport hasn't changed significantly (unless forced after re-search)
         if !force &&
-           abs(visibleRect.origin.y - lastVisibleRect.origin.y) < 10 &&
-           abs(visibleRect.size.height - lastVisibleRect.size.height) < 10 &&
-           !highlightLayers.isEmpty {
+            abs(visibleRect.origin.y - lastVisibleRect.origin.y) < 10 &&
+            abs(visibleRect.size.height - lastVisibleRect.size.height) < 10 &&
+            !highlightLayers.isEmpty {
             // Just update current match highlighting
             updateCurrentMatchHighlight()
             return
         }
         lastVisibleRect = visibleRect
-        
+
         // Recycle existing layers
         recycleAllHighlightLayers()
-        
+
         // Get visible character range with buffer
         let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
         let visibleCharRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-        
+
         // Add buffer (half screen above and below)
         let bufferSize = visibleCharRange.length / 2
         let extendedStart = max(0, visibleCharRange.location - bufferSize)
         let extendedEnd = min(self.string.utf16.count, visibleCharRange.location + visibleCharRange.length + bufferSize)
         let extendedRange = NSRange(location: extendedStart, length: extendedEnd - extendedStart)
-        
+
         // Ensure layout only for extended visible range
         layoutManager.ensureLayout(forCharacterRange: extendedRange)
-        
+
         let origin = textContainerOrigin
         visibleHighlightedRanges.removeAll()
 
@@ -230,23 +232,23 @@ extension CursorTextView {
             }
 
             visibleHighlightedRanges.insert(index)
-            
+
             let glyphRange = layoutManager.glyphRange(forCharacterRange: matchRange, actualCharacterRange: nil)
             guard glyphRange.location != NSNotFound else { continue }
-            
+
             let isCurrentMatch = index == currentSearchIndex
-            
+
             layoutManager.enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: textContainer) { rect, _ in
                 guard rect.width > 0 && rect.height > 0 else { return }
-                
+
                 let highlightLayer = self.reuseOrCreateLayer()
                 let padding: CGFloat = isCurrentMatch ? 2.5 : 1.2
                 let paddedRect = rect.insetBy(dx: -padding, dy: -padding)
-                
+
                 // Configure layer appearance
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)
-                
+
                 if isCurrentMatch {
                     highlightLayer.backgroundColor = NSColor.orange.withAlphaComponent(0.6).cgColor
                     highlightLayer.borderWidth = 0
@@ -259,15 +261,15 @@ extension CursorTextView {
                 }
                 highlightLayer.cornerRadius = 2
                 highlightLayer.frame = paddedRect.offsetBy(dx: origin.x, dy: origin.y)
-                
+
                 CATransaction.commit()
-                
+
                 self.layer?.addSublayer(highlightLayer)
                 self.highlightLayers.append(highlightLayer)
             }
         }
     }
-    
+
     /// Update only the current match highlight (for navigation without full redraw)
     func updateCurrentMatchHighlight() {
         // Clear previous current match styling
@@ -277,45 +279,43 @@ extension CursorTextView {
             layer.borderColor = nil
         }
         currentMatchLayers.removeAll()
-        
+
         // Find and update current match layer if visible
         guard currentSearchIndex < allMatchRanges.count,
               visibleHighlightedRanges.contains(currentSearchIndex),
               let layoutManager = layoutManager,
               let textContainer = textContainer else { return }
-        
+
         let matchRange = allMatchRanges[currentSearchIndex]
         let glyphRange = layoutManager.glyphRange(forCharacterRange: matchRange, actualCharacterRange: nil)
         guard glyphRange.location != NSNotFound else { return }
-        
+
         let origin = textContainerOrigin
-        
+
         layoutManager.enumerateEnclosingRects(forGlyphRange: glyphRange, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0), in: textContainer) { rect, _ in
             guard rect.width > 0 && rect.height > 0 else { return }
-            
+
             // Find existing layer at this position or create new one
             let padding: CGFloat = 2.5
             let paddedRect = rect.insetBy(dx: -padding, dy: -padding)
             let targetFrame = paddedRect.offsetBy(dx: origin.x, dy: origin.y)
-            
+
             // Look for existing layer at this position
-            for layer in self.highlightLayers {
-                if layer.frame.intersects(targetFrame) {
-                    CATransaction.begin()
-                    CATransaction.setDisableActions(true)
-                    layer.backgroundColor = NSColor.orange.withAlphaComponent(0.6).cgColor
-                    layer.borderWidth = 0
-                    layer.borderColor = nil
-                    layer.cornerRadius = 2
-                    layer.frame = targetFrame
-                    CATransaction.commit()
-                    self.currentMatchLayers.append(layer)
-                    return
-                }
+            for layer in self.highlightLayers where layer.frame.intersects(targetFrame) {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                layer.backgroundColor = NSColor.orange.withAlphaComponent(0.6).cgColor
+                layer.borderWidth = 0
+                layer.borderColor = nil
+                layer.cornerRadius = 2
+                layer.frame = targetFrame
+                CATransaction.commit()
+                self.currentMatchLayers.append(layer)
+                return
             }
         }
     }
-    
+
     /// Clear all highlights and reset state
     func clearAllHighlights() {
         recycleAllHighlightLayers()
@@ -324,7 +324,7 @@ extension CursorTextView {
         visibleHighlightedRanges.removeAll()
         isSearchComplete = false
     }
-    
+
     /// Reset search state (called when query changes)
     func resetSearch() {
         searchTask?.cancel()
@@ -335,9 +335,9 @@ extension CursorTextView {
         clearAllHighlights()
         lastVisibleRect = .zero
     }
-    
+
     // MARK: - Layer Pooling
-    
+
     /// Get a layer from pool or create new one
     func reuseOrCreateLayer() -> CALayer {
         if let layer = layerPool.popLast() {
@@ -345,7 +345,7 @@ extension CursorTextView {
         }
         return CALayer()
     }
-    
+
     /// Recycle all highlight layers back to pool
     func recycleAllHighlightLayers() {
         for layer in highlightLayers {

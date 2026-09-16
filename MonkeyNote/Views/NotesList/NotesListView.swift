@@ -12,18 +12,18 @@ import AppKit
 
 struct NotesListView: View {
     @Environment(ContentViewModel.self) var viewModel
-    
+
     // Local state
     @State private var showLargeFileAlert: Bool = false
     @State private var largeFileInfo: (name: String, lines: Int)?
     @State private var isVibrancyEnabled: Bool = UserDefaults.standard.object(forKey: "note.vibrancyEnabled") as? Bool ?? true
-    
+
     var body: some View {
         @Bindable var vm = viewModel
-        
+
         ZStack {
             background
-            
+
             if let folder = viewModel.selectedFolder {
                 List(selection: Binding(
                     get: { viewModel.selectedNoteID },
@@ -37,12 +37,12 @@ struct NotesListView: View {
                             showLargeFileAlert = true
                             return
                         }
-                        
+
                         // Close external file if selecting vault note
                         if newValue != nil && viewModel.isEditingExternalFile {
                             viewModel.closeExternalFile()
                         }
-                        
+
                         // Flush pending keystroke save before leaving the note
                         viewModel.flushPendingNoteSave()
                         vm.selectedNoteID = newValue
@@ -110,9 +110,9 @@ struct NotesListView: View {
         }
         #endif
     }
-    
+
     // MARK: - Background
-    
+
     private var background: some View {
         Group {
             #if os(macOS)
@@ -134,7 +134,7 @@ struct NotesListView: View {
         }
         .ignoresSafeArea()
     }
-    
+
     private var solidBackground: some View {
         Group {
             if viewModel.isDarkMode {
@@ -144,7 +144,7 @@ struct NotesListView: View {
             }
         }
     }
-    
+
     #if os(macOS)
     private var vibrancyMaterial: NSVisualEffectView.Material {
         switch viewModel.vibrancyMaterial {
@@ -162,12 +162,12 @@ struct NotesListView: View {
         }
     }
     #endif
-    
+
     // MARK: - Sort Menu
-    
+
     private var sortMenu: some View {
         @Bindable var vm = viewModel
-        
+
         return Menu {
             Button {
                 vm.sortOption = .nameAscending
@@ -178,7 +178,7 @@ struct NotesListView: View {
                     Text("Name A-Z")
                 }
             }
-            
+
             Button {
                 vm.sortOption = .nameDescending
             } label: {
@@ -188,7 +188,7 @@ struct NotesListView: View {
                     Text("Name Z-A")
                 }
             }
-            
+
             Button {
                 vm.sortOption = .dateNewest
             } label: {
@@ -198,7 +198,7 @@ struct NotesListView: View {
                     Text("Date Newest")
                 }
             }
-            
+
             Button {
                 vm.sortOption = .dateOldest
             } label: {
@@ -208,7 +208,7 @@ struct NotesListView: View {
                     Text("Date Oldest")
                 }
             }
-            
+
             Button {
                 vm.sortOption = .createdNewest
             } label: {
@@ -218,7 +218,7 @@ struct NotesListView: View {
                     Text("Created Newest")
                 }
             }
-            
+
             Button {
                 vm.sortOption = .createdOldest
             } label: {

@@ -10,7 +10,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var vaultManager: VaultManager
-    var onVaultChanged: (() -> Void)? = nil
+    var onVaultChanged: (() -> Void)?
 
     @State private var selectedTab: SettingsTab = .vault
 

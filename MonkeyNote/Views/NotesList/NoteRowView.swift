@@ -9,9 +9,9 @@ import SwiftUI
 
 struct NoteRowView: View {
     @Environment(ContentViewModel.self) var viewModel
-    
+
     let note: NoteItem
-    
+
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
@@ -22,12 +22,12 @@ struct NoteRowView: View {
                             .font(.system(size: 10))
                             .foregroundStyle(.orange)
                     }
-                    
+
                     viewModel.highlightedText(note.title, searchText: viewModel.searchText)
                         .font(.system(.body, design: .monospaced))
                         .lineLimit(1)
                 }
-                
+
                 viewModel.highlightedText(viewModel.notePreview(for: note.text), searchText: viewModel.searchText)
                     .font(.system(.footnote, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -38,9 +38,9 @@ struct NoteRowView: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
-            
+
             Spacer()
-            
+
             // Warning indicator for large files
             if note.isTooLarge {
                 HStack(spacing: 4) {
@@ -61,18 +61,20 @@ struct NoteRowView: View {
             Button {
                 viewModel.togglePinNote(noteID: note.id)
             } label: {
-                Label(note.isPinned ? "Unpin Note" : "Pin Note",
-                      systemImage: note.isPinned ? "pin.slash" : "pin")
+                Label(
+                    note.isPinned ? "Unpin Note" : "Pin Note",
+                    systemImage: note.isPinned ? "pin.slash" : "pin"
+                )
             }
-            
+
             Divider()
-            
+
             Button {
                 viewModel.startRenameNote(noteID: note.id)
             } label: {
                 Text("Rename Note")
             }
-            
+
             Button(role: .destructive) {
                 viewModel.deleteNote(noteID: note.id)
             } label: {

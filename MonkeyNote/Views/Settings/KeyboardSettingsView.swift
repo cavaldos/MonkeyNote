@@ -16,7 +16,7 @@ struct KeyboardSettingsView: View {
             SettingsSection("Double-tap Navigation") {
                 VStack(alignment: .leading, spacing: 16) {
                     Toggle("Enable Double-tap Navigation", isOn: $doubleTapNavigationEnabled)
-                    
+
                     Text("Quickly press a key twice to perform word-level actions instead of character-level.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -44,14 +44,14 @@ struct KeyboardSettingsView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        
+
                         HStack(spacing: 12) {
                             KeyBadge(key: "←", description: "Left Arrow")
                             Text("Double-tap to move to previous word")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        
+
                         HStack(spacing: 12) {
                             KeyBadge(key: "→", description: "Right Arrow")
                             Text("Double-tap to move to next word")
@@ -81,7 +81,7 @@ struct KeyboardSettingsView: View {
 struct KeyBadge: View {
     let key: String
     let description: String
-    
+
     var body: some View {
         Text(key)
             .font(.system(size: 14, weight: .medium, design: .monospaced))

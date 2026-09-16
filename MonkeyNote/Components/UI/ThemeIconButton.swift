@@ -1,6 +1,6 @@
 //
 //  ThemeIconButton.swift
-//  Note
+//  MonkeyNote
 //
 //  Created by Nguyen Ngoc Khanh on 24/12/25.
 //
@@ -11,9 +11,9 @@ struct ThemeIconButton: View {
     let systemImage: String
     let isSelected: Bool
     let action: () -> Void
-    var tooltip: String? = nil
+    var tooltip: String?
     var highlightSelectionChrome: Bool = true
-    
+
     @State private var isHovered: Bool = false
 
     var body: some View {

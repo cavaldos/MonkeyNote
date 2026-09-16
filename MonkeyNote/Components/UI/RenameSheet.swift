@@ -1,6 +1,6 @@
 //
 //  RenameSheet.swift
-//  Note
+//  MonkeyNote
 //
 //  Created by Nguyen Ngoc Khanh on 24/12/25.
 //

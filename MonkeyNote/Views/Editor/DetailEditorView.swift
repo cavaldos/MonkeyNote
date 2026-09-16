@@ -11,20 +11,20 @@ import UniformTypeIdentifiers
 struct DetailEditorView: View {
     @Environment(ContentViewModel.self) var viewModel
     @AppStorage("note.spellcheckEnabled") private var spellcheckEnabled: Bool = true
-    
+
     var body: some View {
         @Bindable var vm = viewModel
-        
+
         ZStack {
             background
-            
+
             // Show editor if we have a selected note OR an external file
             if viewModel.selectedNoteIndex == nil && !viewModel.isEditingExternalFile {
                 emptyState
             } else {
                 editorContent
             }
-            
+
             // Drop overlay
             if viewModel.isDropTargeted {
                 RoundedRectangle(cornerRadius: 12)
@@ -100,9 +100,9 @@ struct DetailEditorView: View {
             .withoutGlassBackground()
         }
     }
-    
+
     // MARK: - Background
-    
+
     private var background: some View {
         Group {
             #if os(macOS)
@@ -125,7 +125,7 @@ struct DetailEditorView: View {
         }
         .ignoresSafeArea()
     }
-    
+
     private var solidBackground: some View {
         Group {
             if viewModel.isDarkMode {
@@ -135,7 +135,7 @@ struct DetailEditorView: View {
             }
         }
     }
-    
+
     #if os(macOS)
     private var vibrancyMaterial: NSVisualEffectView.Material {
         switch viewModel.vibrancyMaterial {
@@ -153,14 +153,14 @@ struct DetailEditorView: View {
         }
     }
     #endif
-    
+
     // MARK: - Empty State
-    
+
     private var emptyState: some View {
         VStack(spacing: 16) {
             Text("Select a note")
                 .foregroundStyle(viewModel.isDarkMode ? .white.opacity(0.45) : .black.opacity(0.55))
-            
+
             if viewModel.isDropTargeted {
                 Text("Drop file here to edit")
                     .font(.system(.caption, design: .monospaced))
@@ -173,15 +173,15 @@ struct DetailEditorView: View {
             }
         }
     }
-    
+
     // MARK: - Editor Content
-    
+
     private var editorContent: some View {
         VStack(spacing: 0) {
             EditorHeaderView()
                 .padding(.top, 1)
                 .padding(.horizontal, 10)
-            
+
             editor
                 .padding(.top, 10)
         }
@@ -192,12 +192,12 @@ struct DetailEditorView: View {
                 .padding(.bottom, 10)
         }
     }
-    
+
     // MARK: - Editor
-    
+
     private var editor: some View {
         @Bindable var vm = viewModel
-        
+
         return Group {
             #if os(macOS)
             ThickCursorTextEditor(
@@ -233,7 +233,7 @@ struct DetailEditorView: View {
                 textVersion: viewModel.textRevision
             )
             .overlay(alignment: .topLeading) {
-                    if viewModel.activeText.first(where: { !$0.isWhitespace && !$0.isNewline }) == nil {
+                if viewModel.activeText.first(where: { !$0.isWhitespace && !$0.isNewline }) == nil {
                     Text("Write something…")
                         .font(.system(size: viewModel.fontSize, weight: .regular, design: viewModel.fontDesign))
                         .foregroundStyle(viewModel.isDarkMode ? .white.opacity(0.25) : .black.opacity(0.25))
@@ -250,7 +250,7 @@ struct DetailEditorView: View {
                 .scrollContentBackground(.hidden)
                 .background(Color.clear)
                 .overlay(alignment: .topLeading) {
-                if viewModel.activeText.first(where: { !$0.isWhitespace && !$0.isNewline }) == nil {
+                    if viewModel.activeText.first(where: { !$0.isWhitespace && !$0.isNewline }) == nil {
                         Text("Write something…")
                             .font(.system(size: viewModel.fontSize, weight: .regular, design: viewModel.fontDesign))
                             .foregroundStyle(viewModel.isDarkMode ? .white.opacity(0.25) : .black.opacity(0.25))

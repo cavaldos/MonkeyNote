@@ -106,12 +106,10 @@ class WordSuggestionManager {
             return
         }
 
-        for case let fileURL as URL in enumerator {
-            if fileURL.pathExtension.lowercased() == "txt" {
-                if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
-                    let words = parseWords(from: content)
-                    tempWords.append(contentsOf: words)
-                }
+        for case let fileURL as URL in enumerator where fileURL.pathExtension.lowercased() == "txt" {
+            if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
+                let words = parseWords(from: content)
+                tempWords.append(contentsOf: words)
             }
         }
 

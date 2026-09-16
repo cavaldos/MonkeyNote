@@ -20,7 +20,7 @@ enum ToolbarAction: String, CaseIterable {
     case link = "Link"
     case alignLeft = "Left"
     case list = "List"
-    
+
     var icon: String {
         switch self {
         case .heading: return "textformat.size"
@@ -34,7 +34,7 @@ enum ToolbarAction: String, CaseIterable {
         case .list: return "list.bullet"
         }
     }
-    
+
     var tooltipName: String {
         switch self {
         case .heading: return "Heading"
@@ -48,7 +48,7 @@ enum ToolbarAction: String, CaseIterable {
         case .list: return "Bulleted list"
         }
     }
-    
+
     var shortcutHint: String? {
         switch self {
         case .bold: return "⌘B"
@@ -57,14 +57,14 @@ enum ToolbarAction: String, CaseIterable {
         default: return nil
         }
     }
-    
+
     var tooltipText: String {
         if let shortcut = shortcutHint {
             return "\(tooltipName)\n\(shortcut)"
         }
         return tooltipName
     }
-    
+
     var markdownPrefix: String {
         switch self {
         case .bold: return "**"
@@ -76,7 +76,7 @@ enum ToolbarAction: String, CaseIterable {
         default: return ""
         }
     }
-    
+
     var markdownSuffix: String {
         switch self {
         case .bold: return "**"
@@ -93,29 +93,29 @@ enum ToolbarAction: String, CaseIterable {
 // MARK: - Selection Toolbar Window Controller
 class SelectionToolbarController: NSObject {
     static let shared = SelectionToolbarController()
-    
+
     private var toolbarWindow: NSWindow?
     private var onAction: ((ToolbarAction, NSRange) -> Void)?
     private var currentSelectionRange: NSRange = NSRange(location: 0, length: 0)
-    
+
     var isVisible: Bool {
         toolbarWindow?.isVisible ?? false
     }
-    
+
     func show(at point: NSPoint, in parentWindow: NSWindow, selectionRange: NSRange, onAction: @escaping (ToolbarAction, NSRange) -> Void) {
         self.onAction = onAction
         self.currentSelectionRange = selectionRange
-        
+
         dismiss()
-        
+
         let toolbarView = NSHostingView(rootView: SelectionToolbarView(onAction: { [weak self] action in
             guard let self = self else { return }
             self.onAction?(action, self.currentSelectionRange)
             self.dismiss()
         }))
-        
+
         let contentSize = toolbarView.fittingSize
-        
+
         // Create toolbar window
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: contentSize),
@@ -123,26 +123,26 @@ class SelectionToolbarController: NSObject {
             backing: .buffered,
             defer: false
         )
-        
+
         window.contentView = toolbarView
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
         window.level = .floating
         window.isMovableByWindowBackground = false
-        
+
         // Position above selection
         let toolbarX = point.x - contentSize.width / 2
         let toolbarY = point.y + 8
-        
+
         window.setFrameOrigin(NSPoint(x: toolbarX, y: toolbarY))
-        
+
         parentWindow.addChildWindow(window, ordered: .above)
         window.orderFront(nil)
-        
+
         toolbarWindow = window
     }
-    
+
     func dismiss() {
         if let window = toolbarWindow {
             window.parent?.removeChildWindow(window)
@@ -155,13 +155,13 @@ class SelectionToolbarController: NSObject {
 // MARK: - Selection Toolbar View
 struct SelectionToolbarView: View {
     let onAction: (ToolbarAction) -> Void
-    
+
     @State private var hoveredAction: ToolbarAction?
-    
+
     private let mainActions: [ToolbarAction] = [
         .bold, .italic, .code, .strikethrough, .highlight, .link, .alignLeft, .list
     ]
-    
+
     var body: some View {
         HStack(spacing: 4) {
             ForEach(mainActions, id: \.self) { action in
@@ -194,7 +194,7 @@ struct SelectionToolbarView: View {
                 .onHover { isHovered in
                     hoveredAction = isHovered ? action : nil
                 }
-                
+
                 // Add divider after highlight
                 if action == .highlight || action == .link {
                     Divider()

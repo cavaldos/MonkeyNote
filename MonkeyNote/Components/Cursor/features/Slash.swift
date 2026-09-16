@@ -10,25 +10,25 @@ import AppKit
 
 // MARK: - Slash Command Menu
 extension CursorTextView {
-    
+
     func showSlashMenu() {
         guard let layoutManager = layoutManager,
               let textContainer = textContainer,
               let window = self.window else { return }
-        
+
         let selectedRange = self.selectedRange()
         slashCommandRange = NSRange(location: selectedRange.location - 1, length: 1) // The "/" character
-        
+
         // Get cursor position in window coordinates
         let glyphRange = layoutManager.glyphRange(forCharacterRange: selectedRange, actualCharacterRange: nil)
         var cursorRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
         cursorRect.origin.x += textContainerInset.width
         cursorRect.origin.y += textContainerInset.height
-        
+
         // Convert to window coordinates
         let rectInView = convert(cursorRect, to: nil)
         let rectInWindow = window.convertToScreen(NSRect(origin: rectInView.origin, size: CGSize(width: 1, height: cursorRect.height)))
-        
+
         slashCommandController.show(
             at: NSPoint(x: rectInWindow.origin.x, y: rectInWindow.origin.y),
             in: window,
@@ -40,27 +40,27 @@ extension CursorTextView {
             }
         )
     }
-    
+
     func dismissSlashMenu() {
         slashCommandController.dismiss()
         slashCommandRange = nil
         slashFilterText = ""
     }
-    
+
     func handleSlashCommand(_ command: SlashCommand) {
         guard let range = slashCommandRange else { return }
-        
+
         // Replace "/" and any filter text with the command prefix
         replaceCharacters(in: range, with: command.prefix)
-        
+
         // Set cursor position right after the inserted prefix
         let newCursorPosition = range.location + command.prefix.utf16.count
         setSelectedRange(NSRange(location: newCursorPosition, length: 0))
-        
+
         slashCommandRange = nil
         slashFilterText = ""
     }
-    
+
     /// Handle key down events when slash command menu is visible
     /// Returns true if the event was handled
     func handleSlashCommandKeyDown(with event: NSEvent) -> Bool {
@@ -101,7 +101,7 @@ extension CursorTextView {
             return false
         }
     }
-    
+
     /// Handle insert text when slash command menu is visible
     /// Returns true if the event was handled
     func handleSlashCommandInsertText(_ str: String, replacementRange: NSRange) -> Bool {
@@ -110,7 +110,7 @@ extension CursorTextView {
             slashFilterText += str
             slashCommandController.updateFilter(slashFilterText)
             super.insertText(str, replacementRange: replacementRange)
-            
+
             // Update the slash command range to include filter text
             if let range = slashCommandRange {
                 slashCommandRange = NSRange(location: range.location, length: 1 + slashFilterText.utf16.count)
@@ -127,18 +127,18 @@ extension CursorTextView {
             return false
         }
     }
-    
+
     /// Check if "/" was typed at the beginning of a line and show menu
     func handleSlashAtLineStart(_ str: String) {
         guard str == "/" else { return }
-        
+
         let selectedRange = self.selectedRange()
         let text = self.string as NSString
-        
+
         // Check if "/" is at the start of a line (after newline or at position 0)
         let slashPosition = selectedRange.location - 1
         if slashPosition < 0 { return }
-        
+
         let isAtLineStart: Bool
         if slashPosition == 0 {
             isAtLineStart = true
@@ -146,7 +146,7 @@ extension CursorTextView {
             let prevChar = text.substring(with: NSRange(location: slashPosition - 1, length: 1))
             isAtLineStart = prevChar == "\n"
         }
-        
+
         if isAtLineStart {
             slashFilterText = ""  // Reset filter text when opening menu
             showSlashMenu()

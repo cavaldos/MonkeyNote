@@ -16,7 +16,7 @@ struct MonkeyNoteApp: App {
     #if os(macOS)
     @StateObject private var vibrancyConfigurator = VibrancyWindowConfigurator()
     #endif
-    
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -42,7 +42,7 @@ struct MonkeyNoteApp: App {
 // MARK: - Window Accessor View
 struct WindowAccessor: NSViewRepresentable {
     var callback: (NSWindow?) -> Void
-    
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
@@ -50,7 +50,7 @@ struct WindowAccessor: NSViewRepresentable {
         }
         return view
     }
-    
+
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
             self.callback(nsView.window)
@@ -63,11 +63,11 @@ class VibrancyWindowConfigurator: ObservableObject {
     private weak var window: NSWindow?
     private var visualEffectView: NSVisualEffectView?
     private var backingView: NSView?
-    
+
     @Published var isVibrancyEnabled: Bool = UserDefaults.standard.object(forKey: "note.vibrancyEnabled") as? Bool ?? true
     @Published var materialType: String = UserDefaults.standard.string(forKey: "note.vibrancyMaterial") ?? "hudWindow"
     @Published var isWindowPinned: Bool = UserDefaults.standard.object(forKey: "note.windowAlwaysOnTop") as? Bool ?? false
-    
+
     init() {
         NotificationCenter.default.addObserver(
             self,
@@ -83,15 +83,15 @@ class VibrancyWindowConfigurator: ObservableObject {
             object: nil
         )
     }
-    
+
     deinit {
         NotificationCenter.default.removeObserver(self)
     }
-    
+
     @objc private func vibrancySettingDidChange() {
         isVibrancyEnabled = UserDefaults.standard.object(forKey: "note.vibrancyEnabled") as? Bool ?? true
         materialType = UserDefaults.standard.string(forKey: "note.vibrancyMaterial") ?? "hudWindow"
-        
+
         if let window = window {
             configureWindow(window)
         }
@@ -104,11 +104,11 @@ class VibrancyWindowConfigurator: ObservableObject {
             applyWindowLevel(on: window)
         }
     }
-    
+
     func configureWindow(_ window: NSWindow) {
         self.window = window
         applyWindowLevel(on: window)
-        
+
         if isVibrancyEnabled {
             enableVibrancy(on: window)
         } else {
@@ -119,33 +119,33 @@ class VibrancyWindowConfigurator: ObservableObject {
     private func applyWindowLevel(on window: NSWindow) {
         window.level = isWindowPinned ? .floating : .normal
     }
-    
+
     private func enableVibrancy(on window: NSWindow) {
         window.isOpaque = false
         window.backgroundColor = .clear
-        
+
         let material = getMaterial(from: materialType)
-        
+
         if let existingView = visualEffectView {
             existingView.material = material
         } else {
             guard let contentView = window.contentView else { return }
-            
+
             let blurView = NSVisualEffectView()
             blurView.material = material
             blurView.blendingMode = .behindWindow
             blurView.state = .active
             blurView.translatesAutoresizingMaskIntoConstraints = false
-            
+
             contentView.addSubview(blurView, positioned: .below, relativeTo: contentView.subviews.first)
-            
+
             NSLayoutConstraint.activate([
                 blurView.topAnchor.constraint(equalTo: contentView.topAnchor),
                 blurView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
                 blurView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-                blurView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+                blurView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             ])
-            
+
             visualEffectView = blurView
         }
 
@@ -162,19 +162,19 @@ class VibrancyWindowConfigurator: ObservableObject {
                 backing.topAnchor.constraint(equalTo: contentView.topAnchor),
                 backing.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
                 backing.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-                backing.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+                backing.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             ])
             backingView = backing
         }
         backingView?.layer?.backgroundColor = opaqueBackingColor().cgColor
     }
-    
+
     private func disableVibrancy(on window: NSWindow) {
         visualEffectView?.removeFromSuperview()
         visualEffectView = nil
         backingView?.removeFromSuperview()
         backingView = nil
-        
+
         window.isOpaque = true
         window.backgroundColor = NSColor.windowBackgroundColor
     }
@@ -187,7 +187,7 @@ class VibrancyWindowConfigurator: ObservableObject {
             ? NSColor(red: 49.0 / 255.0, green: 49.0 / 255.0, blue: 49.0 / 255.0, alpha: 1.0)
             : NSColor(white: 0.97, alpha: 1.0)
     }
-    
+
     private func getMaterial(from string: String) -> NSVisualEffectView.Material {
         switch string {
         case "hudWindow": return .hudWindow
@@ -217,4 +217,4 @@ extension View {
         )
     }
 }
-#endif 
+#endif

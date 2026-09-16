@@ -1,6 +1,6 @@
 //
 //  NoteModels.swift
-//  Note
+//  MonkeyNote
 //
 //  Created by Nguyen Ngoc Khanh on 24/12/25.
 //
@@ -16,7 +16,7 @@ struct NoteItem: Identifiable, Hashable, Codable {
     var isTitleCustom: Bool
     var savedTitle: String
     var isPinned: Bool
-    
+
     // Large file protection
     var isTooLarge: Bool
     var lineCount: Int
@@ -44,12 +44,12 @@ struct NoteItem: Identifiable, Hashable, Codable {
         self.isTooLarge = isTooLarge
         self.lineCount = lineCount
     }
-    
+
     // Only save metadata to JSON, not text content (stored in .md files)
     enum CodingKeys: String, CodingKey {
         case id, title, updatedAt, createdAt, isTitleCustom, savedTitle, isPinned
     }
-    
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -63,7 +63,7 @@ struct NoteItem: Identifiable, Hashable, Codable {
         isTooLarge = false // Will be determined when loading .md file
         lineCount = 0 // Will be determined when loading .md file
     }
-    
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
@@ -101,7 +101,7 @@ struct NoteFolder: Identifiable, Hashable, Codable {
         self.notes = notes
         self.children = children
     }
-    
+
     // Codable - exclude computed property
     enum CodingKeys: String, CodingKey {
         case id, name, savedName, notes, children
@@ -123,7 +123,7 @@ enum NoteSortOption: String, CaseIterable, Codable {
     case dateOldest = "Date Oldest"
     case createdNewest = "Created Newest"
     case createdOldest = "Created Oldest"
-    
+
     var icon: String {
         switch self {
         case .nameAscending: return "textformat.abc"
@@ -147,7 +147,7 @@ struct TrashItem: Identifiable, Hashable {
     let type: TrashItemType
     let relativePath: String  // Path relative to vault root
     let fullURL: URL
-    
+
     init(name: String, type: TrashItemType, relativePath: String, fullURL: URL) {
         self.id = UUID()
         self.name = name

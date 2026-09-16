@@ -9,17 +9,17 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(ContentViewModel.self) var viewModel
-    
+
     // Local state
     @State private var dragOverFolderID: NoteFolder.ID?
     @State private var hoverFolderID: NoteFolder.ID?
-    
+
     var body: some View {
         @Bindable var vm = viewModel
-        
+
         ZStack {
             sidebarBackground
-            
+
             VStack(spacing: 0) {
                 List(selection: $vm.selectedFolderID) {
                     // Folders section
@@ -32,7 +32,7 @@ struct SidebarView: View {
                             )
                         }
                     }
-                    
+
                     // Drop zone for moving folder to root
                     Section {
                         HStack {
@@ -45,14 +45,14 @@ struct SidebarView: View {
                         .padding(.vertical, 4)
                         .opacity(dragOverFolderID == nil ? 0.5 : 0.3)
                     }
-                    .dropDestination(for: String.self) { items, location in
+                    .dropDestination(for: String.self) { items, _ in
                         guard let itemString = items.first,
                               let itemID = UUID(uuidString: itemString) else { return false }
                         return viewModel.handleDropOnRoot(items: [itemID])
-                    } isTargeted: { isTargeted in
+                    } isTargeted: { _ in
                         // Visual feedback when dragging over root drop zone
                     }
-                    
+
                     // Trash section
                     Section("Trash") {
                         Button {
@@ -73,7 +73,7 @@ struct SidebarView: View {
                 }
                 .listStyle(.sidebar)
                 .scrollContentBackground(.hidden)
-                
+
                 // Bottom toolbar
                 HStack(spacing: 12) {
                     Button {
@@ -81,7 +81,7 @@ struct SidebarView: View {
                     } label: {
                         Image(systemName: "folder.badge.plus")
                     }
-                    
+
                     Button {
                         viewModel.showSettings = true
                     } label: {
@@ -108,9 +108,9 @@ struct SidebarView: View {
             .frame(minWidth: 700, minHeight: 500)
         }
     }
-    
+
     // MARK: - Background
-    
+
     private var sidebarBackground: some View {
         Group {
             #if os(macOS)
@@ -134,7 +134,7 @@ struct SidebarView: View {
         }
         .ignoresSafeArea()
     }
-    
+
     #if os(macOS)
     private var vibrancyMaterial: NSVisualEffectView.Material {
         switch viewModel.vibrancyMaterial {

@@ -29,13 +29,13 @@ class CursorTextView: NSTextView {
     }
     var cursorAnimationEnabled: Bool = true
     var cursorAnimationDuration: Double = 0.15
-    
+
     // MARK: - Search Properties
     var searchText: String = ""
     var currentSearchIndex: Int = 0
     var onSearchMatchesChanged: ((Int, Bool) -> Void)?  // (count, isComplete)
     var searchMatchRanges: [NSRange] = []  // All matches for navigation
-    
+
     // Search optimization - viewport-based highlighting
     var allMatchRanges: [NSRange] = []  // Full list from background search
     var visibleHighlightedRanges: Set<Int> = []  // Indices of currently highlighted matches
@@ -50,33 +50,33 @@ class CursorTextView: NSTextView {
     var searchToken = UUID()
     // true = edit trong doc (debounce, giữ highlights cũ); false = đổi query (search ngay).
     var searchNeedsRefreshDueToEdit: Bool = false
-    
+
     // Layer pooling for reuse
     var layerPool: [CALayer] = []
-    
+
     // MARK: - Autocomplete Properties
     var autocompleteEnabled: Bool = true
     var autocompleteDelay: Double = 0.0
     var autocompleteOpacity: Double = 0.5
     var suggestionMode: String = "word"  // "word" or "sentence"
-    
+
     // Autocomplete inline ghost (preview chars in storage push right-side text)
     var ghostRange: NSRange?
     var isApplyingGhost = false
     var currentSuggestion: String?
     var suggestionWordStart: Int = 0
     var suggestionTask: Task<Void, Never>?
-    
+
     // MARK: - Double-tap Navigation Properties
     var doubleTapNavigationEnabled: Bool = true
     var doubleTapDelay: Double = 300  // milliseconds
     var lastKeyCode: UInt16 = 0
     var lastKeyTime: Date = Date.distantPast
-    
+
     // MARK: - Scroll Properties
     var disableAutoScroll: Bool = false
     var isScrolling: Bool = false
-    
+
     // MARK: - Layer Properties
     var cursorLayer: CALayer?
     var lastCursorRect: NSRect = .zero
@@ -88,21 +88,21 @@ class CursorTextView: NSTextView {
     var editFlashLayer: CALayer?
     var highlightLayers: [CALayer] = []
     var currentMatchLayers: [CALayer] = []  // Track current match layers for shake animation
-    
+
     // MARK: - Cursor Blink Properties
     var blinkTimer: Timer?
     var cursorVisible: Bool = true
-    
+
     // MARK: - Slash Command Properties
     var slashCommandController = SlashCommandWindowController()
     var slashCommandRange: NSRange?
     var slashFilterText: String = ""  // Track text typed after "/"
-    
+
     // MARK: - Dictionary Lookup Properties
     var dictionaryLookupController: DictionaryLookupWindowController?
     var dictionaryLookupRange: NSRange?  // Range of "word\" including the backslash
     var dictionaryLanguage: String = "en"
-    
+
     // MARK: - Auto Pair Properties
     var autoPairEnabled: Bool = true
     let autoPairMap: [String: String] = [
@@ -111,10 +111,10 @@ class CursorTextView: NSTextView {
         "(": ")",
         "[": "]",
         "{": "}",
-        "`": "`"
+        "`": "`",
     ]
     let closingChars: Set<String> = ["\"", "'", ")", "]", "}", "`"]
-    
+
     // MARK: - Selection Toolbar Properties
     var selectionToolbarController = SelectionToolbarController.shared
 
@@ -138,7 +138,7 @@ class CursorTextView: NSTextView {
 
     // Spellcheck debounce cho file vừa (large đã tắt hẳn trong applySpellcheckSettings).
     var spellResumeWork: DispatchWorkItem?
-    
+
     // Flag to track if selection is from search navigation
     var isNavigatingSearch: Bool = false
 
@@ -152,15 +152,15 @@ class CursorTextView: NSTextView {
     // Pending todo toggle (click vs drag-select disambiguation)
     var pendingTodoCharIndex: Int?
     var pendingTodoDownPoint: NSPoint = .zero
-    
+
     // MARK: - Lifecycle
-    
+
     deinit {
         stopBlinkTimer()
     }
-    
+
     // MARK: - Override Methods
-    
+
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         if result && cursorBlinkEnabled {
@@ -197,7 +197,7 @@ class CursorTextView: NSTextView {
                 "bounds": NSNull(),
                 "backgroundColor": NSNull(),
                 "cornerRadius": NSNull(),
-                "opacity": NSNull()
+                "opacity": NSNull(),
             ]
             wantsLayer = true
             self.layer?.addSublayer(layer)
@@ -255,7 +255,7 @@ class CursorTextView: NSTextView {
     override var rangeForUserCompletion: NSRange {
         selectedRange()
     }
-    
+
     override func keyDown(with event: NSEvent) {
         // Handle slash command menu navigation
         if slashCommandController.isVisible {
@@ -263,14 +263,14 @@ class CursorTextView: NSTextView {
                 return
             }
         }
-        
+
         // Handle dictionary lookup - dismiss on any key except viewing
         if let dictController = dictionaryLookupController, dictController.isVisible {
             if handleDictionaryLookupKeyDown(with: event) {
                 return
             }
         }
-        
+
         // Handle Escape to dismiss autocomplete suggestion
         if event.keyCode == 53 { // Escape
             if currentSuggestion != nil {
@@ -278,31 +278,31 @@ class CursorTextView: NSTextView {
                 return
             }
         }
-        
+
         // Handle formatting shortcuts (Cmd+B, Cmd+I, Cmd+E)
         if event.modifierFlags.contains(.command) {
             if handleFormattingShortcut(with: event) {
                 return
             }
         }
-        
+
         guard !event.isARepeat else {
             super.keyDown(with: event)
             return
         }
-        
+
         // Handle double-tap navigation (Delete, Left Arrow, Right Arrow)
         if handleDoubleTapNavigation(with: event) {
             return
         }
-        
+
         // Handle Tab key - check for autocomplete suggestion first
         if event.keyCode == 48 {
             if handleTabKey(with: event) {
                 return
             }
         }
-        
+
         // Handle Shift + Enter - soft line break (continue same list item)
         if event.keyCode == 36 && event.modifierFlags.contains(.shift) {
             discardGhostBeforeEdit()
@@ -318,10 +318,10 @@ class CursorTextView: NSTextView {
                 return
             }
         }
-        
+
         super.keyDown(with: event)
     }
-    
+
     override func insertText(_ insertString: Any, replacementRange: NSRange) {
         guard let str = insertString as? String else {
             super.insertText(insertString, replacementRange: replacementRange)
@@ -331,24 +331,24 @@ class CursorTextView: NSTextView {
         // Inline ghost is preview chars in storage — strip before any real
         // edit so its range never goes stale while layout shifts.
         discardGhostBeforeEdit()
-        
+
         // If slash command menu is visible, update filter with typed character
         if slashCommandController.isVisible {
             if handleSlashCommandInsertText(str, replacementRange: replacementRange) {
                 return
             }
         }
-        
+
         // Check for space after "." or "-" at line start to convert to bullet
         if handleBulletConversion(str) {
             return
         }
-        
+
         // MARK: - Auto Pair Brackets/Quotes
         if handleAutoPair(str, replacementRange: replacementRange) {
             return
         }
-        
+
         // TRƯỚC super: chụp nền nơi chữ sắp hiện để làm màn reveal —
         // sau super chữ đã vào rồi, chụp lúc đó không còn nền nữa.
         // Chỉ gõ nối cuối dòng, chuỗi ngắn, không xuống dòng, không IME.
@@ -357,9 +357,9 @@ class CursorTextView: NSTextView {
         let largeDoc = isLargeDocument
         let coverPlan: (CGImage, NSRect)? =
             (!largeDoc
-             && replacementRange.length == 0 && preSel.length == 0
-              && str.utf16.count <= 4 && !hasMarkedText()
-              && str.rangeOfCharacter(from: .newlines) == nil)
+                && replacementRange.length == 0 && preSel.length == 0
+                && str.utf16.count <= 4 && !hasMarkedText()
+                && str.rangeOfCharacter(from: .newlines) == nil)
             ? planInsertCover(str, at: preSel.location) : nil
 
         super.insertText(insertString, replacementRange: replacementRange)
@@ -396,17 +396,17 @@ class CursorTextView: NSTextView {
         } else {
             updateSuggestion()
         }
-        
+
         // Check if "\" was typed - show dictionary lookup for word before it
         if str == "\\" {
             showDictionaryLookupForWordBeforeBackslash()
             return
         }
-        
+
         // Check if "/" was typed at the beginning of a line
         handleSlashAtLineStart(str)
     }
-    
+
     override func replaceCharacters(in range: NSRange, with str: String) {
         // Funnel for paste/formatting/bullet/slash edits — strip ghost first.
         if !isApplyingGhost {
@@ -446,17 +446,17 @@ class CursorTextView: NSTextView {
         if let img = doomedImage, let r = doomedRect {
             flashDeletedImage(img, at: r)
         }
-        
+
         // Update suggestion after deletion
         updateSuggestion()
     }
-    
+
     override func setSelectedRange(_ charRange: NSRange) {
         super.setSelectedRange(charRange)
         updateCaretVisibilityForSelection()
         handleSelectionChange()
     }
-    
+
     override func setSelectedRange(_ charRange: NSRange, affinity: NSSelectionAffinity, stillSelecting stillSelectingFlag: Bool) {
         super.setSelectedRange(charRange, affinity: affinity, stillSelecting: stillSelectingFlag)
         // Hide the thick caret for the whole drag (stillSelecting=true) so it
@@ -510,16 +510,16 @@ class CursorTextView: NSTextView {
         layer.opacity = 0
         CATransaction.commit()
     }
-    
+
     // MARK: - Link Handling
-    
+
     override func clicked(onLink link: Any, at charIndex: Int) {
         // Handle link click manually to prevent errors
         guard let urlString = link as? String else { return }
-        
+
         // Try to create URL and open it
         var urlToOpen: URL?
-        
+
         if let url = URL(string: urlString) {
             // Check if URL has a scheme
             if url.scheme != nil {
@@ -529,12 +529,12 @@ class CursorTextView: NSTextView {
                 urlToOpen = URL(string: "https://\(urlString)")
             }
         }
-        
+
         if let url = urlToOpen {
             NSWorkspace.shared.open(url)
         }
     }
-    
+
     // Prevent default link behavior that causes errors
     override func mouseDown(with event: NSEvent) {
         pendingTodoCharIndex = nil
@@ -584,14 +584,14 @@ class CursorTextView: NSTextView {
               attrs[NSAttributedString.Key("todoUnchecked")] != nil || attrs[NSAttributedString.Key("todoChecked")] != nil else { return }
         toggleTodoAtCharIndex(upIndex)
     }
-    
+
     // MARK: - Todo Toggle
-    
+
     func toggleTodoAtCharIndex(_ charIndex: Int) {
         let text = self.string as NSString
         let lineRange = text.lineRange(for: NSRange(location: charIndex, length: 0))
         let lineText = text.substring(with: lineRange)
-        
+
         let newLineText: String
         if lineText.hasPrefix("- [ ] ") {
             newLineText = "- [x] " + String(lineText.dropFirst("- [ ] ".count))
@@ -604,18 +604,18 @@ class CursorTextView: NSTextView {
         } else {
             return
         }
-        
+
         let savedSelection = self.selectedRange()
         self.replaceCharacters(in: lineRange, with: newLineText)
         self.setSelectedRange(savedSelection)
     }
-    
+
     override func layout() {
         super.layout()
 
         // Only update search highlights if search is active
         guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        
+
         // Debounce scroll updates to prevent excessive redraws
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(debouncedUpdateHighlights), object: nil)
         perform(#selector(debouncedUpdateHighlights), with: nil, afterDelay: 0.08)
@@ -643,11 +643,11 @@ class CursorTextView: NSTextView {
         // hẳn, file nhỏ giữ nguyên hành vi.
         scheduleSpellcheckDebounce()
     }
-    
+
     @objc func debouncedUpdateHighlights() {
         updateHighlights()
     }
-    
+
     // Override to prevent flickering when scrolling to cursor
     override func scrollRangeToVisible(_ range: NSRange) {
         // Drag-select autoscroll: AppKit calls this continuously while the
@@ -679,11 +679,14 @@ final class ClearTrackScroller: NSScroller {
         let slot = rect(for: .knob)
         guard !slot.isEmpty, slot.width > 0, slot.height > 0 else { return }
         let w: CGFloat = 5
-        let r = NSRect(x: slot.midX - w / 2, y: slot.minY + 1,
-                       width: w, height: max(slot.height - 2, w))
+        let r = NSRect(
+            x: slot.midX - w / 2,
+            y: slot.minY + 1,
+            width: w,
+            height: max(slot.height - 2, w)
+        )
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let c = dark ? NSColor.white.withAlphaComponent(0.3)
-                     : NSColor.black.withAlphaComponent(0.25)
+        let c = dark ? NSColor.white.withAlphaComponent(0.3) : NSColor.black.withAlphaComponent(0.25)
         c.setFill()
         NSBezierPath(roundedRect: r, xRadius: w / 2, yRadius: w / 2).fill()
     }
@@ -707,29 +710,28 @@ struct ThickCursorTextEditor: NSViewRepresentable {
 
     // Line numbers
     var showLineNumbers: Bool = true
-    
+
     // Double-tap navigation
     var doubleTapNavigationEnabled: Bool = true
     var doubleTapDelay: Double = 300
-    
+
     // Search navigation
     var currentSearchIndex: Int = 0
-    var onSearchMatchesChanged: ((Int, Bool) -> Void)? = nil  // Reports (count, isComplete)
-    var onNavigateToMatch: ((Int) -> Void)? = nil  // Called when should navigate to specific match
+    var onSearchMatchesChanged: ((Int, Bool) -> Void)?  // Reports (count, isComplete)
+    var onNavigateToMatch: ((Int) -> Void)?  // Called when should navigate to specific match
 
     // Cursor position callback
-    var onCursorLineChanged: ((Int) -> Void)? = nil
+    var onCursorLineChanged: ((Int) -> Void)?
 
     // Typing callback: textView là source of truth, ViewModel update silent
     // (không re-render SwiftUI mỗi phím). Giữ `text` Binding cho chiều đọc
     // (updateNSView phát hiện đổi note/file ngoài).
-    var onTextEdited: ((String) -> Void)? = nil
+    var onTextEdited: ((String) -> Void)?
 
     // External text revision từ ViewModel: updateNSView chỉ so chuỗi khi số này
     // đổi (ghi ngoài), lúc gõ revision đứng yên → skip O(1). Mặc định 0 = lần
     // đầu luôn sync để chốt version.
     var textVersion: UInt64 = 0
-
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -787,7 +789,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: horizontalPadding, height: 0)
         textView.textContainer?.lineFragmentPadding = 0 // số dòng sát chữ (mặc định 5pt)
-        
+
         // Disable automatic text substitution features
         textView.isAutomaticQuoteSubstitutionEnabled = false // disable "smart quotes"
         textView.isAutomaticDashSubstitutionEnabled = false // disable — em dash substitution
@@ -796,7 +798,6 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         textView.smartInsertDeleteEnabled = false // disable smart insert/delete
         textView.applySpellcheckSettings() // underline misspelled words (language shared with autocomplete)
 
-        
         // Critical settings for proper scrolling
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -923,7 +924,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         }
         // Giữ spacing khi đổi font + đảm bảo dòng mới gõ tiếp vẫn thưa
         applyParagraphSpacing(textView, fontSize: fontSize)
-        
+
         let textColor = isDarkMode
             ? NSColor.white.withAlphaComponent(0.92)
             : NSColor.black.withAlphaComponent(0.92)
@@ -934,7 +935,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
 
         // Update line number ruler view
         updateRulerView(scrollView: scrollView, context: context, font: font)
-        
+
         // Check if search index changed and navigate to match
         let previousIndex = context.coordinator.lastSearchIndex
         let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1019,7 +1020,7 @@ struct ThickCursorTextEditor: NSViewRepresentable {
         init(_ parent: ThickCursorTextEditor) {
             self.parent = parent
             super.init()
-            
+
             // Listen for focusEditor notification
             NotificationCenter.default.addObserver(
                 self,
@@ -1028,11 +1029,11 @@ struct ThickCursorTextEditor: NSViewRepresentable {
                 object: nil
             )
         }
-        
+
         deinit {
             NotificationCenter.default.removeObserver(self)
         }
-        
+
         @objc func focusEditor() {
             DispatchQueue.main.async {
                 self.textView?.window?.makeFirstResponder(self.textView)
@@ -1052,10 +1053,10 @@ struct ThickCursorTextEditor: NSViewRepresentable {
                 parent.text = textView.string
             }
         }
-        
+
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            
+
             // Dùng chung cache với ruler (O(log N)) thay vì scan prefix O(cursor)
             // mỗi keystroke — StatusBar và ruler highlight cùng 1 kết quả.
             let cursorPosition = textView.selectedRange().location

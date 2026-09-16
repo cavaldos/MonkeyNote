@@ -9,7 +9,7 @@ import SwiftUI
 
 struct EditorHeaderView: View {
     @Environment(ContentViewModel.self) var viewModel
-    
+
     var body: some View {
         HStack(spacing: 8) {
             // Close button for external file
@@ -23,12 +23,12 @@ struct EditorHeaderView: View {
                 .buttonStyle(.plain)
                 .help("Close external file")
             }
-            
+
             Text(viewModel.selectedNoteTitle)
             Circle()
                 .fill(Color.red)
                 .frame(width: 6, height: 6)
-            
+
             // Show file path for external file
             if viewModel.isEditingExternalFile, let url = viewModel.externalFileURL {
                 Text(viewModel.formatFilePath(url))

@@ -62,10 +62,10 @@ struct AutocompleteSettingsView: View {
                                 .onChange(of: useSystemDictionary) { _, newValue in
                                     WordSuggestionManager.shared.setUseSystemDictionary(newValue)
                                 }
-                            
+
                             if useSystemDictionary {
                                 VStack(alignment: .leading, spacing: 8) {
-                                    
+
                                     Picker("Language", selection: $dictionaryLanguage) {
                                         ForEach(DictionaryService.commonLanguages, id: \.code) { lang in
                                             Text(lang.name).tag(lang.code)
@@ -84,15 +84,19 @@ struct AutocompleteSettingsView: View {
                             }
                         }
                     }
-                    
+
                     SettingsSection("Word Filter") {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Minimum Word Length: \(minWordLength) characters")
                                 .font(.subheadline)
-                            Slider(value: Binding(
-                                get: { Double(minWordLength) },
-                                set: { minWordLength = Int($0) }
-                            ), in: 2...8, step: 1)
+                            Slider(
+                                value: Binding(
+                                    get: { Double(minWordLength) },
+                                    set: { minWordLength = Int($0) }
+                                ),
+                                in: 2...8,
+                                step: 1
+                            )
                                 .frame(maxWidth: 250)
                             Text("Words shorter than this will not be suggested (e.g., 'a', 'the', 'is')")
                                 .font(.caption)

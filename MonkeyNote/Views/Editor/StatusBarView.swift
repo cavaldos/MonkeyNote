@@ -9,7 +9,7 @@ import SwiftUI
 
 struct StatusBarView: View {
     @Environment(ContentViewModel.self) var viewModel
-    
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "doc.text")

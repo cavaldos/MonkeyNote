@@ -17,29 +17,29 @@ import UIKit
 
 final class PomodoroTimerManager: ObservableObject {
     static let shared = PomodoroTimerManager()
-    
+
     @Published var timeRemaining: Int = 0 // seconds
     @Published var isRunning: Bool = false
     @Published var showInput: Bool = false
     @Published var minutesInput: String = ""
-    
+
     private var timer: Timer?
-    
+
     private init() {}
-    
+
     func startInput() {
         showInput = true
     }
-    
+
     func start() {
         // If input is empty, use default 25 minutes
         let minutes = Int(minutesInput.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 25
         guard minutes > 0 else { return }
-        
+
         timeRemaining = minutes * 60
         isRunning = true
         showInput = false
-        
+
         // Start timer
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -54,19 +54,19 @@ final class PomodoroTimerManager: ObservableObject {
                 #endif
             }
         }
-        
+
         triggerPomodoroHaptic()
     }
-    
+
     func pause() {
         isRunning = false
         timer?.invalidate()
         triggerPomodoroHaptic()
     }
-    
+
     func resume() {
         isRunning = true
-        
+
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             if self.timeRemaining > 0 {
@@ -78,10 +78,10 @@ final class PomodoroTimerManager: ObservableObject {
                 #endif
             }
         }
-        
+
         triggerPomodoroHaptic()
     }
-    
+
     func stop() {
         isRunning = false
         timer?.invalidate()
@@ -89,18 +89,18 @@ final class PomodoroTimerManager: ObservableObject {
         minutesInput = ""
         triggerPomodoroHaptic()
     }
-    
+
     func cancelInput() {
         showInput = false
         minutesInput = ""
     }
-    
+
     func formatTime(_ seconds: Int) -> String {
         let minutes = seconds / 60
         let secs = seconds % 60
         return String(format: "%02d:%02d", minutes, secs)
     }
-    
+
     private func triggerPomodoroHaptic() {
         #if os(macOS)
         NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
@@ -116,7 +116,7 @@ final class PomodoroTimerManager: ObservableObject {
 struct PomodoroTimerView: View {
     @StateObject private var manager = PomodoroTimerManager.shared
     @AppStorage("note.isDarkMode") private var isDarkMode: Bool = true
-    
+
     var body: some View {
         HStack(spacing: 6) {
             // Timer display or input
@@ -126,12 +126,12 @@ struct PomodoroTimerView: View {
                     Image(systemName: "timer")
                         .font(.system(size: 12))
                         .foregroundStyle(manager.isRunning ? .orange : .secondary)
-                    
+
                     Text(manager.formatTime(manager.timeRemaining))
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundStyle(isDarkMode ? .white.opacity(0.9) : .black.opacity(0.9))
                 }
-                
+
                 // Pause/Resume button
                 Button {
                     if manager.isRunning {
@@ -150,7 +150,7 @@ struct PomodoroTimerView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                
+
                 // Stop button
                 Button {
                     manager.stop()
@@ -170,7 +170,7 @@ struct PomodoroTimerView: View {
                 Image(systemName: "timer")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                
+
                 #if os(macOS)
                 TextField("25", text: $manager.minutesInput)
                     .textFieldStyle(.plain)
@@ -189,7 +189,7 @@ struct PomodoroTimerView: View {
                     .font(.system(size: 12))
                     .keyboardType(.numberPad)
                 #endif
-                
+
                 // Start button
                 Button {
                     manager.start()
@@ -205,7 +205,7 @@ struct PomodoroTimerView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                
+
                 // Cancel button
                 Button {
                     manager.cancelInput()
