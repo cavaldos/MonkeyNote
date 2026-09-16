@@ -29,6 +29,6 @@ jobs:
             "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux_amd64.zip"
           mkdir -p /tmp/swiftlint && unzip -q -o /tmp/swiftlint.zip -d /tmp/swiftlint
           echo "/tmp/swiftlint" >> $GITHUB_PATH
-          swiftlint version
+          /tmp/swiftlint/swiftlint version # GITHUB_PATH applies from the next step
       - name: Run SwiftLint
         run: swiftlint --strict
