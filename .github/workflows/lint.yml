@@ -15,9 +15,20 @@ jobs:
   swiftlint:
     if: '!github.event.pull_request.merged'
     runs-on: ubuntu-latest
+    env:
+      # Keep in sync with local dev: `swiftlint version` (brew install swiftlint).
+      # The old norio-nomura/action-swiftlint@3.2.1 bundles SwiftLint 0.52 whose
+      # indentation_width reports differently from modern versions — pinning one
+      # exact binary keeps local and CI verdicts identical.
+      SWIFTLINT_VERSION: 0.65.1
     steps:
       - uses: actions/checkout@v3
+      - name: Install SwiftLint
+        run: |
+          curl -fsSL -o /tmp/swiftlint.zip \
+            "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux_amd64.zip"
+          mkdir -p /tmp/swiftlint && unzip -q -o /tmp/swiftlint.zip -d /tmp/swiftlint
+          echo "/tmp/swiftlint" >> $GITHUB_PATH
+          swiftlint version
       - name: Run SwiftLint
-        uses: norio-nomura/action-swiftlint@3.2.1
-        with:
-          args: --strict
+        run: swiftlint --strict

@@ -9,6 +9,10 @@ if ! command -v swiftlint >/dev/null; then
   exit 1
 fi
 echo "==> swiftlint --strict"
+PINNED=$(grep -m1 'SWIFTLINT_VERSION:' .github/workflows/lint.yml | grep -o '[0-9][0-9.]*')
+if [ "$(swiftlint version)" != "$PINNED" ]; then
+  echo "warning: local swiftlint $(swiftlint version) != CI $PINNED — run: brew upgrade swiftlint"
+fi
 swiftlint --strict
 
 echo "==> xcodebuild Release (same flags as release.yml)"
